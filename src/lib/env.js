@@ -1,6 +1,13 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+// Vercel Postgres auto-injects POSTGRES_URL when you attach a database to a
+// project. Treat it as the same thing as DATABASE_URL so the code doesn't have
+// to know which DB host we're on.
+if (!process.env.DATABASE_URL && process.env.POSTGRES_URL) {
+  process.env.DATABASE_URL = process.env.POSTGRES_URL;
+}
+
 // SLACK_APP_TOKEN is only needed in Socket Mode (local dev); HTTP/Vercel uses signing secret only.
 const schema = z.object({
   SLACK_BOT_TOKEN: z.string().startsWith('xoxb-'),

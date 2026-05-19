@@ -51,12 +51,11 @@ This bot runs entirely on **Vercel** plus a Postgres database. Everything else (
 |---|---|---|---|
 | 1 | **GitHub** | Code lives here | Free |
 | 2 | **Slack workspace** | The bot lives in your workspace | Free |
-| 3 | **Postgres host** (Supabase or Vercel Postgres) | Stores funnels, candidates, feedback | Free tier |
+| 3 | **Vercel** | Hosts the Slack endpoint, the cron worker, **and the Postgres database** | Free, no card |
 | 4 | **Apify** | Twitter scraping | $5/mo free credit, no card |
 | 5 | **Anthropic API key** | Claude scoring | $5 trial credit, then card required |
-| 6 | **Vercel** | Hosts the Slack endpoint + the cron worker | Free, no card |
 
-You don't need a credit card to *start*. You'll need one eventually for Anthropic (after the trial credit runs out — typically a few thousand scorings in).
+That's **one infrastructure account (Vercel)** — it covers the app and the database. No credit card needed to start. You'll need one eventually for Anthropic (after the trial credit runs out — typically a few thousand scorings in).
 
 ### Step 1 — Create the Slack app
 
@@ -71,52 +70,50 @@ You don't need a credit card to *start*. You'll need one eventually for Anthropi
    - Click your own name → **Copy member ID** (starts with `U`). Save as `SLACK_ADMIN_USER_ID`.
 6. In `#leads`, run `/invite @WAVS Leads` so the bot can post there.
 
-### Step 2 — Set up the database
+### Step 2 — Get external API tokens
 
-**Option A (recommended): Supabase**
-
-1. https://supabase.com → New project → free tier.
-2. SQL editor → paste `supabase/schema.sql` → Run.
-3. Project Settings → **Database** → **Connection string** → URI tab → copy. Save as `DATABASE_URL`.
-
-**Option B: Vercel Postgres**
-
-You can create this *inside* your Vercel project after Step 5. Then re-run `supabase/schema.sql` against it via Vercel's SQL console.
-
-### Step 3 — Set up Apify
-
+**Apify** (Twitter scraping)
 1. https://apify.com → sign up (no card required).
 2. Console → **Settings → Integrations → API → Personal API Token** → save as `APIFY_TOKEN`.
-3. The default actor is `apidojo/tweet-scraper` (no change needed).
 
-### Step 4 — Set up Anthropic
-
+**Anthropic** (Claude scoring)
 1. https://console.anthropic.com → **API keys** → create one → save as `ANTHROPIC_API_KEY`.
-   This is a separate billing track from Claude.ai or Claude Code. Initial signup gives you ~$5 credit. After that, a card is required.
+   Separate billing track from Claude.ai or Claude Code. Initial signup gives ~$5 credit, then a card is required.
 
-### Step 5 — Deploy to Vercel
+### Step 3 — Create the Vercel project (without deploying yet)
 
 1. https://vercel.com → sign up with GitHub (no card required for the Hobby plan).
 2. **Add New → Project** → import `gogoDiego/wavs-leads-bot` (or your fork).
 3. Framework Preset: **Other**. Leave build settings at defaults.
-4. **Environment Variables** — add each of these to **Production** *and* **Preview**:
+4. **Don't click Deploy yet** — first we'll attach a database (next step) so its connection string is wired in automatically.
 
-   | Name | Value |
-   |---|---|
-   | `SLACK_BOT_TOKEN` | from Step 1 |
-   | `SLACK_SIGNING_SECRET` | from Step 1 |
-   | `SLACK_LEADS_CHANNEL_ID` | from Step 1 |
-   | `SLACK_ADMIN_USER_ID` | from Step 1 |
-   | `SLACK_SOCKET_MODE` | `false` |
-   | `DATABASE_URL` | from Step 2 |
-   | `APIFY_TOKEN` | from Step 3 |
-   | `APIFY_TWEET_ACTOR` | `apidojo/tweet-scraper` |
-   | `ANTHROPIC_API_KEY` | from Step 4 |
-   | `ANTHROPIC_MODEL` | `claude-sonnet-4-6` |
-   | `CRON_SECRET` | any random string (`openssl rand -hex 32` or just make one up) |
-   | `TZ` | `America/Chicago` |
+### Step 4 — Attach Vercel Postgres
 
-5. Click **Deploy**. You'll get a URL like `https://wavs-leads-bot-abc123.vercel.app`.
+1. In your new Vercel project → **Storage** tab → **Create Database** → **Postgres** → pick a region close to you → **Create**.
+2. Vercel auto-injects `POSTGRES_URL` (and a few related vars) into your project's env. Our code reads it via the same alias as `DATABASE_URL` — no extra config needed.
+3. In the new database's **Query** console, paste the contents of `db/schema.sql` → **Run**. You should see "OK" with the tables created.
+
+### Step 5 — Set the remaining env vars + deploy
+
+Back in your Vercel project → **Settings → Environment Variables** → add each of these to **Production** *and* **Preview**:
+
+| Name | Value |
+|---|---|
+| `SLACK_BOT_TOKEN` | from Step 1 |
+| `SLACK_SIGNING_SECRET` | from Step 1 |
+| `SLACK_LEADS_CHANNEL_ID` | from Step 1 |
+| `SLACK_ADMIN_USER_ID` | from Step 1 |
+| `SLACK_SOCKET_MODE` | `false` |
+| `APIFY_TOKEN` | from Step 2 |
+| `APIFY_TWEET_ACTOR` | `apidojo/tweet-scraper` |
+| `ANTHROPIC_API_KEY` | from Step 2 |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-6` |
+| `CRON_SECRET` | any random string (`openssl rand -hex 32` or just make one up) |
+| `TZ` | `America/Chicago` |
+
+(`POSTGRES_URL` and friends are already set automatically by Vercel Postgres — leave those alone.)
+
+Then **Deployments** tab → click **Redeploy** on the latest. You'll get a URL like `https://wavs-leads-bot-abc123.vercel.app`.
 
 ### Step 6 — Point Slack at your Vercel URL
 
@@ -149,7 +146,7 @@ GitHub repo ──── push ────► Vercel
                               └──── /api/worker (Vercel cron, every 30 min)
                                          │
                                          ▼
-                                    Postgres (Supabase or Vercel Postgres)
+                                    Vercel Postgres (attached to same project)
                                          │
                                          ▼
                               Apify (Twitter)  +  Anthropic (Claude)
