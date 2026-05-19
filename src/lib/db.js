@@ -20,6 +20,26 @@ async function q1(text, params) {
   return rows[0] ?? null;
 }
 
+// Postgres session-level advisory lock — auto-released when the connection
+// closes, so a crashed worker won't leave the lock stuck.
+const WORKER_LOCK_KEY = 4242;
+
+export async function withWorkerLock(fn) {
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query('select pg_try_advisory_lock($1) as locked', [WORKER_LOCK_KEY]);
+    if (!rows[0].locked) return { skipped: true, reason: 'worker_lock_held' };
+    try {
+      const result = await fn();
+      return { skipped: false, result };
+    } finally {
+      await client.query('select pg_advisory_unlock($1)', [WORKER_LOCK_KEY]);
+    }
+  } finally {
+    client.release();
+  }
+}
+
 // ── funnels ──────────────────────────────────────────────────────────────
 export async function createFunnel(row) {
   const cols = Object.keys(row);

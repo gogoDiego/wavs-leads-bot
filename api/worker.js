@@ -1,0 +1,56 @@
+// Vercel cron endpoint. Configured in vercel.json to fire every 30 min.
+// Vercel sends `Authorization: Bearer <CRON_SECRET>` automatically when
+// CRON_SECRET is set in the project's env vars.
+//
+// Manual trigger:
+//   curl -H "Authorization: Bearer $CRON_SECRET" https://<your-domain>/api/worker
+// To bypass the per-funnel due-check (force a run of every active funnel):
+//   curl -H "Authorization: Bearer $CRON_SECRET" "https://<your-domain>/api/worker?force=1"
+
+import { env } from '../src/lib/env.js';
+import { log } from '../src/lib/log.js';
+import { runDueFunnels } from '../src/worker/runDueFunnels.js';
+import { withWorkerLock, listActiveFunnels, markFunnelRan } from '../src/lib/db.js';
+import { runFunnel } from '../src/worker/runFunnel.js';
+
+function unauthorized(req) {
+  const expected = env.CRON_SECRET;
+  if (!expected) return false; // CRON_SECRET unset → don't gate (useful in dev)
+  const auth = req.headers.authorization || req.headers.Authorization;
+  return auth !== `Bearer ${expected}`;
+}
+
+async function runAllActive() {
+  const funnels = await listActiveFunnels();
+  const summaries = [];
+  for (const f of funnels) {
+    const s = await runFunnel(f);
+    await markFunnelRan(f.id);
+    summaries.push(s);
+  }
+  return summaries;
+}
+
+export default async function handler(req, res) {
+  if (unauthorized(req)) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const force = (req.query?.force ?? req.url?.includes('force=1')) ? true : false;
+
+  try {
+    const { skipped, reason, result } = await withWorkerLock(async () =>
+      force ? runAllActive() : runDueFunnels(),
+    );
+    if (skipped) {
+      log.warn('worker_skipped', { reason });
+      res.status(200).json({ ok: true, skipped: true, reason });
+      return;
+    }
+    res.status(200).json({ ok: true, ran: result.length, summaries: result });
+  } catch (err) {
+    log.error('worker_endpoint_failed', { error: String(err) });
+    res.status(500).json({ error: String(err) });
+  }
+}

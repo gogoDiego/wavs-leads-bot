@@ -12,6 +12,10 @@ const schema = z.object({
 
   DATABASE_URL: z.string().url(),
 
+  // Set in Vercel; required for the /api/worker cron endpoint.
+  // Local dev can leave it unset (the endpoint is ungated when CRON_SECRET is empty).
+  CRON_SECRET: z.string().optional(),
+
   APIFY_TOKEN: z.string().optional(),
   APIFY_TWEET_ACTOR: z.string().default('apidojo/tweet-scraper'),
 
