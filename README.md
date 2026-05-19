@@ -109,5 +109,5 @@ If nothing posts, check the summary: most likely `passed_velocity: 0` (too high 
 - **Phase 2** ✅ Worker: Apify → velocity → Claude → post cards (no buttons). Run with `npm run worker:once`.
 - **Phase 3** ✅ Cron scheduling (`npm run worker`), `/funnel list | pause | delete`.
 - **Phase 4** ✅ Card buttons (🔗 / 👍 / 👎 / 📌 / 🙈), feedback writes, `/funnel stats`.
-- **Phase 5** Advanced mode, `/funnel edit | fork`.
+- **Phase 5** ✅ Advanced mode, `/funnel edit [advanced]`, `/funnel fork`.
 - **Phase 6** Budget caps, admin daily DM, Railway deploy.

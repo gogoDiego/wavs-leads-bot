@@ -59,6 +59,17 @@ export async function listActiveFunnels() {
   return data ?? [];
 }
 
+export async function updateFunnel(id, patch) {
+  const { data, error } = await supabase
+    .from('funnels')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function setFunnelStatus(id, status) {
   const { data, error } = await supabase
     .from('funnels')

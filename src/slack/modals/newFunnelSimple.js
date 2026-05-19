@@ -1,8 +1,8 @@
-import { createFunnel, getFunnelByName } from '../../lib/db.js';
+import { createFunnel, getFunnelByName, updateFunnel } from '../../lib/db.js';
 import { assembleSimplePrompt } from '../../lib/prompt.js';
 import { log } from '../../lib/log.js';
 
-const CALLBACK_ID = 'new_funnel_simple';
+const CALLBACK_ID = 'funnel_simple';
 
 const FREQUENCY_TO_CRON = {
   every_3h:    '0 */3 * * *',
@@ -16,12 +16,24 @@ const FREQUENCY_LABELS = {
   once_daily:  'Once daily (9 AM CT)',
 };
 
-function buildView() {
-  return {
+function freqOption(value) {
+  return { text: { type: 'plain_text', text: FREQUENCY_LABELS[value] }, value };
+}
+
+function buildView({ funnel } = {}) {
+  const cfg = funnel?.simple_config ?? {};
+  const isEdit = !!funnel;
+
+  const initialFrequency = cfg.frequency && FREQUENCY_LABELS[cfg.frequency] ? cfg.frequency : 'every_3h';
+
+  const initial = (v) => (v == null ? undefined : String(v));
+
+  const view = {
     type: 'modal',
     callback_id: CALLBACK_ID,
-    title:  { type: 'plain_text', text: 'New funnel' },
-    submit: { type: 'plain_text', text: 'Create' },
+    private_metadata: isEdit ? JSON.stringify({ funnel_id: funnel.id }) : '',
+    title:  { type: 'plain_text', text: isEdit ? 'Edit funnel' : 'New funnel' },
+    submit: { type: 'plain_text', text: isEdit ? 'Save' : 'Create' },
     close:  { type: 'plain_text', text: 'Cancel' },
     blocks: [
       {
@@ -31,6 +43,7 @@ function buildView() {
         element: {
           type: 'plain_text_input',
           action_id: 'value',
+          initial_value: initial(funnel?.name),
           placeholder: { type: 'plain_text', text: 'e.g. distributed-systems-builders' },
           max_length: 60,
         },
@@ -43,6 +56,7 @@ function buildView() {
           type: 'plain_text_input',
           action_id: 'value',
           multiline: true,
+          initial_value: initial(cfg.icp),
           placeholder: {
             type: 'plain_text',
             text: 'Senior eng or platform lead at a startup building event-driven services. Likely already on Kafka/NATS and frustrated with custom glue code.',
@@ -58,6 +72,7 @@ function buildView() {
         element: {
           type: 'plain_text_input',
           action_id: 'value',
+          initial_value: initial((cfg.keywords ?? []).join(', ')),
           placeholder: { type: 'plain_text', text: 'event-driven, kafka, durable execution, choreography' },
           max_length: 400,
         },
@@ -70,6 +85,7 @@ function buildView() {
         element: {
           type: 'plain_text_input',
           action_id: 'value',
+          initial_value: initial((cfg.hard_skips ?? []).join(', ')),
           placeholder: { type: 'plain_text', text: 'hiring, looking for job, crypto airdrop' },
           max_length: 400,
         },
@@ -81,28 +97,29 @@ function buildView() {
         element: {
           type: 'radio_buttons',
           action_id: 'value',
-          initial_option: {
-            text: { type: 'plain_text', text: FREQUENCY_LABELS.every_3h },
-            value: 'every_3h',
-          },
-          options: Object.entries(FREQUENCY_LABELS).map(([value, label]) => ({
-            text: { type: 'plain_text', text: label },
-            value,
-          })),
+          initial_option: freqOption(initialFrequency),
+          options: Object.keys(FREQUENCY_LABELS).map(freqOption),
         },
       },
       {
         type: 'context',
         elements: [
-          { type: 'mrkdwn', text: 'Search queries, scoring thresholds, and budget will use sensible defaults. Use `/funnel edit` (advanced mode) to tune them later.' },
+          {
+            type: 'mrkdwn',
+            text: isEdit
+              ? 'Search queries are auto-built from the keywords above. To hand-edit them (or any other threshold), run `/funnel edit <name> advanced`.'
+              : 'Search queries, scoring thresholds, and budget will use sensible defaults. Use `/funnel edit <name> advanced` to tune them later.',
+          },
         ],
       },
     ],
   };
+
+  return view;
 }
 
-export async function openNewFunnelSimpleModal({ client, trigger_id }) {
-  await client.views.open({ trigger_id, view: buildView() });
+export async function openNewFunnelSimpleModal({ client, trigger_id, funnel }) {
+  await client.views.open({ trigger_id, view: buildView({ funnel }) });
 }
 
 function splitCsv(s) {
@@ -114,6 +131,10 @@ function splitCsv(s) {
 
 export function registerNewFunnelSimpleModal(app) {
   app.view(CALLBACK_ID, async ({ ack, view, body, client }) => {
+    const meta = view.private_metadata ? JSON.parse(view.private_metadata) : {};
+    const funnel_id = meta.funnel_id;
+    const isEdit = !!funnel_id;
+
     const v = view.state.values;
     const name       = v.name.value.value.trim();
     const icp        = v.icp.value.value.trim();
@@ -122,8 +143,9 @@ export function registerNewFunnelSimpleModal(app) {
     const frequency  = v.frequency.value.value.selected_option.value;
     const ownerSlackId = body.user.id;
 
+    // Name uniqueness — only fight conflicts that aren't the current funnel.
     const existing = await getFunnelByName(ownerSlackId, name);
-    if (existing) {
+    if (existing && existing.id !== funnel_id) {
       await ack({
         response_action: 'errors',
         errors: { name: 'You already have a funnel with this name.' },
@@ -135,34 +157,43 @@ export function registerNewFunnelSimpleModal(app) {
 
     try {
       const relevance_prompt = assembleSimplePrompt({ icp, keywords, hard_skips });
-
-      // Default search query = keywords OR'd together. Owner can refine in advanced mode.
       const search_queries = keywords.length
         ? [keywords.map((k) => `"${k}"`).join(' OR ')]
         : [];
 
-      const row = await createFunnel({
-        owner_slack_id: ownerSlackId,
+      const payload = {
         name,
-        status: 'active',
-        search_queries,
         prompt_mode: 'simple',
         simple_config: { icp, keywords, hard_skips, frequency },
         relevance_prompt,
+        search_queries,
         schedule_cron: FREQUENCY_TO_CRON[frequency],
-      });
+      };
 
-      log.info('funnel_created', { id: row.id, owner: ownerSlackId, name, frequency });
+      let row;
+      if (isEdit) {
+        row = await updateFunnel(funnel_id, payload);
+        log.info('funnel_updated', { id: row.id, owner: ownerSlackId, name });
+      } else {
+        row = await createFunnel({
+          ...payload,
+          owner_slack_id: ownerSlackId,
+          status: 'active',
+        });
+        log.info('funnel_created', { id: row.id, owner: ownerSlackId, name, frequency });
+      }
 
       await client.chat.postMessage({
         channel: ownerSlackId,
-        text: `✅ Funnel *${name}* created. Status: \`active\`. It will check ${FREQUENCY_LABELS[frequency].toLowerCase()} once the worker is online (Phase 3).`,
+        text: isEdit
+          ? `✏️ Funnel *${name}* updated. Worker will pick up the new config within ~60s.`
+          : `✅ Funnel *${name}* created. Status: \`active\`. It will check ${FREQUENCY_LABELS[frequency].toLowerCase()} once the worker is online.`,
       });
     } catch (err) {
-      log.error('funnel_create_failed', { error: String(err), name });
+      log.error('funnel_save_failed', { error: String(err), name, isEdit });
       await client.chat.postMessage({
         channel: ownerSlackId,
-        text: `❌ Couldn't create funnel *${name}*: ${err.message}`,
+        text: `❌ Couldn't save funnel *${name}*: ${err.message}`,
       });
     }
   });

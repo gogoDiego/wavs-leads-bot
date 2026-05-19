@@ -5,6 +5,7 @@ import { env } from '../lib/env.js';
 import { log } from '../lib/log.js';
 import { registerFunnelCommand } from './commands/funnel.js';
 import { registerNewFunnelSimpleModal } from './modals/newFunnelSimple.js';
+import { registerNewFunnelAdvancedModal } from './modals/newFunnelAdvanced.js';
 import { registerCardButtonHandlers } from './actions/cardButtons.js';
 
 const app = new App({
@@ -17,6 +18,7 @@ const app = new App({
 
 registerFunnelCommand(app);
 registerNewFunnelSimpleModal(app);
+registerNewFunnelAdvancedModal(app);
 registerCardButtonHandlers(app);
 
 app.error(async (error) => {
