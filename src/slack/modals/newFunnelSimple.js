@@ -4,17 +4,22 @@ import { log } from '../../lib/log.js';
 
 const CALLBACK_ID = 'funnel_simple';
 
-const FREQUENCY_TO_CRON = {
-  every_3h:    '0 */3 * * *',
-  business_ct: '0 9,13,17 * * *',
-  once_daily:  '0 9 * * *',
+// Map UI choices ↔ interval_hours. 6h is the default.
+const FREQUENCY_TO_HOURS = {
+  every_3h:  3,
+  every_6h:  6,
+  every_12h: 12,
+  daily:     24,
 };
 
 const FREQUENCY_LABELS = {
-  every_3h:    'Every 3 hours',
-  business_ct: '9 AM / 1 PM / 5 PM CT',
-  once_daily:  'Once daily (9 AM CT)',
+  every_3h:  'Every 3 hours',
+  every_6h:  'Every 6 hours (default)',
+  every_12h: 'Every 12 hours',
+  daily:     'Once a day',
 };
+
+const DEFAULT_FREQUENCY = 'every_6h';
 
 function freqOption(value) {
   return { text: { type: 'plain_text', text: FREQUENCY_LABELS[value] }, value };
@@ -24,7 +29,7 @@ function buildView({ funnel } = {}) {
   const cfg = funnel?.simple_config ?? {};
   const isEdit = !!funnel;
 
-  const initialFrequency = cfg.frequency && FREQUENCY_LABELS[cfg.frequency] ? cfg.frequency : 'every_3h';
+  const initialFrequency = cfg.frequency && FREQUENCY_LABELS[cfg.frequency] ? cfg.frequency : DEFAULT_FREQUENCY;
 
   const initial = (v) => (v == null ? undefined : String(v));
 
@@ -167,7 +172,7 @@ export function registerNewFunnelSimpleModal(app) {
         simple_config: { icp, keywords, hard_skips, frequency },
         relevance_prompt,
         search_queries,
-        schedule_cron: FREQUENCY_TO_CRON[frequency],
+        interval_hours: FREQUENCY_TO_HOURS[frequency],
       };
 
       let row;
@@ -186,7 +191,7 @@ export function registerNewFunnelSimpleModal(app) {
       await client.chat.postMessage({
         channel: ownerSlackId,
         text: isEdit
-          ? `✏️ Funnel *${name}* updated. Worker will pick up the new config within ~60s.`
+          ? `✏️ Funnel *${name}* updated. Worker will pick up the new config within ~5min.`
           : `✅ Funnel *${name}* created. Status: \`active\`. It will check ${FREQUENCY_LABELS[frequency].toLowerCase()} once the worker is online.`,
       });
     } catch (err) {

@@ -13,15 +13,15 @@ import { openNewFunnelAdvancedModal } from '../modals/newFunnelAdvanced.js';
 const STUB = (sub) =>
   `\`${sub}\` is coming in a later phase. Available now: \`/funnel new | list | pause <name> | delete <name> | stats <name> | edit <name> [advanced] | fork <name>\`.`;
 
-// Reverse of FREQUENCY_TO_CRON in newFunnelSimple.js — just for display.
-const CRON_LABEL = {
-  '0 */3 * * *':      'every 3h',
-  '0 9,13,17 * * *':  '9 AM / 1 PM / 5 PM CT',
-  '0 9 * * *':        'once daily (9 AM CT)',
-};
+function describeSchedule(funnel) {
+  return `every ${funnel.interval_hours}h`;
+}
 
-function describeSchedule(cron) {
-  return CRON_LABEL[cron] || `cron \`${cron}\``;
+function describeLastRun(funnel) {
+  if (!funnel.last_run_at) return 'never run';
+  const hoursAgo = (Date.now() - new Date(funnel.last_run_at).getTime()) / 3_600_000;
+  if (hoursAgo < 1) return `${Math.round(hoursAgo * 60)}min ago`;
+  return `${hoursAgo.toFixed(1)}h ago`;
 }
 
 async function handleList({ ownerSlackId, respond }) {
@@ -36,7 +36,7 @@ async function handleList({ ownerSlackId, respond }) {
 
   const lines = rows.map((f) => {
     const statusIcon = f.status === 'active' ? '🟢' : '⏸️';
-    return `${statusIcon} *${f.name}* — ${f.status}, ${describeSchedule(f.schedule_cron)}, min_score ${f.min_score}, top ${f.max_per_digest}/digest`;
+    return `${statusIcon} *${f.name}* — ${f.status}, ${describeSchedule(f)}, last run ${describeLastRun(f)}, min_score ${f.min_score}`;
   });
 
   await respond({
@@ -62,7 +62,7 @@ async function handlePause({ ownerSlackId, name, respond }) {
   await setFunnelStatus(f.id, 'paused');
   await respond({
     response_type: 'ephemeral',
-    text: `⏸️ *${f.name}* paused. The worker will stop scheduling it within ~60s. To resume, run \`/funnel edit ${f.name}\` and flip status to active (advanced mode).`,
+    text: `⏸️ *${f.name}* paused. The worker will skip it on the next tick. To resume, run \`/funnel edit ${f.name} advanced\` and flip status to active.`,
   });
 }
 
@@ -85,7 +85,7 @@ async function handleStats({ ownerSlackId, name, respond }) {
   const fb = s.feedback;
   const lines = [
     `📊 *${f.name}*`,
-    `Status: ${f.status === 'active' ? '🟢 active' : '⏸️ paused'} · ${describeSchedule(f.schedule_cron)}`,
+    `Status: ${f.status === 'active' ? '🟢 active' : '⏸️ paused'} · ${describeSchedule(f)} · last run ${describeLastRun(f)}`,
     `Candidates scored: *${s.total}* · posted: *${s.posted}* · avg score *${s.avg_score.toFixed(1)}*`,
     s.posted
       ? `Feedback (of ${s.posted} posted): 👍 ${fb.good} (${pct(fb.good, s.posted)}) · 👎 ${fb.noise} (${pct(fb.noise, s.posted)}) · 📌 ${fb.saved} (${pct(fb.saved, s.posted)}) · 🙈 ${fb.hide} (${pct(fb.hide, s.posted)})`

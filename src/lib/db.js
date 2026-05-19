@@ -126,6 +126,14 @@ export async function insertCandidate(row) {
   return data;
 }
 
+export async function markFunnelRan(id, when = new Date()) {
+  const { error } = await supabase
+    .from('funnels')
+    .update({ last_run_at: when.toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
 export async function markCandidatePosted(candidateId, postedTs) {
   const { error } = await supabase
     .from('candidates')

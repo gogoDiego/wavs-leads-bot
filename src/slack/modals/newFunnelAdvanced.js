@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import cron from 'node-cron';
 
 import { createFunnel, getFunnelByName, updateFunnel } from '../../lib/db.js';
 import { log } from '../../lib/log.js';
@@ -16,7 +15,7 @@ const submitSchema = z.object({
   max_age_hours:      z.coerce.number().int().min(1).max(168),
   max_per_digest:     z.coerce.number().int().min(1).max(20),
   budget_monthly_usd: z.coerce.number().min(0),
-  schedule_cron:      z.string().refine((s) => cron.validate(s), 'Not a valid cron expression.'),
+  interval_hours:     z.coerce.number().int().min(1).max(168),
   status:             z.enum(['active', 'paused']),
 });
 
@@ -80,9 +79,9 @@ function buildView({ funnel } = {}) {
       input('velocity_floor', 'velocity_floor (eng/hour)', { initial_value: String(f.velocity_floor ?? 20) }),
       input('max_age_hours',  'max_age_hours',             { initial_value: String(f.max_age_hours  ?? 12) }),
       input('max_per_digest', 'max_per_digest',            { initial_value: String(f.max_per_digest ?? 5) }),
-      input('schedule_cron',  'schedule_cron (in TZ from env)', {
-        initial_value: f.schedule_cron ?? '0 */3 * * *',
-        placeholder: '0 */3 * * *',
+      input('interval_hours', 'interval_hours (how often to rerun)', {
+        initial_value: String(f.interval_hours ?? 6),
+        placeholder: '6',
       }),
       input('budget_monthly_usd', 'budget_monthly_usd', { initial_value: String(f.budget_monthly_usd ?? 20) }),
       {
@@ -126,7 +125,7 @@ export function registerNewFunnelAdvancedModal(app) {
       velocity_floor:     v.velocity_floor.value.value,
       max_age_hours:      v.max_age_hours.value.value,
       max_per_digest:     v.max_per_digest.value.value,
-      schedule_cron:      v.schedule_cron.value.value?.trim(),
+      interval_hours:     v.interval_hours.value.value,
       budget_monthly_usd: v.budget_monthly_usd.value.value,
       status:             v.status.value.value.selected_option.value,
     };

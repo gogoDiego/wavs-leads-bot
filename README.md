@@ -23,6 +23,8 @@ What's wired: `/funnel new` (simple mode) + a manually-triggered worker that fet
    - **URL** → `SUPABASE_URL`
    - **service_role** key → `SUPABASE_SERVICE_ROLE_KEY`
 
+If you already have a Supabase project from earlier phases, run `supabase/migrations/001_interval_hours.sql` once to swap `schedule_cron` → `interval_hours`.
+
 ### 2. Slack app
 
 1. Go to https://api.slack.com/apps → **Create New App** → **From an app manifest**.
@@ -89,13 +91,13 @@ Or every active funnel:
 npm run worker:once -- --all
 ```
 
-To run continuously on each funnel's `schedule_cron` (Phase 3):
+To run continuously:
 
 ```
 npm run worker
 ```
 
-The cron loop re-syncs from Supabase every 60s, so pausing/creating/deleting funnels in Slack takes effect within a minute — no worker restart needed.
+The worker ticks every 5 minutes (set `WORKER_TICK_MS` to override). On each tick, it lists active funnels and runs the ones whose `interval_hours` has elapsed since `last_run_at`. Pausing/creating/deleting funnels in Slack takes effect on the next tick — no worker restart needed.
 
 The worker will: search Twitter via Apify → drop tweets older than `max_age_hours` or already in `seen_tweets` → keep only those above `velocity_floor` → score with Claude → post the top `max_per_digest` (default 5) that hit `min_score` (default 7) to `#leads`. It prints a JSON summary at the end (counts, cost in USD).
 

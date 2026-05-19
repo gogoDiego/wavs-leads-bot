@@ -22,7 +22,8 @@ create table if not exists funnels (
   max_age_hours           int  not null default 12,
   max_per_digest          int  not null default 5,
 
-  schedule_cron           text not null,             -- e.g. '0 */3 * * *'
+  interval_hours          int  not null default 6,   -- how often the worker reruns this funnel
+  last_run_at             timestamptz,               -- null until first run
   budget_monthly_usd      numeric(10,2) not null default 20.00,
   spent_this_month_usd    numeric(10,4) not null default 0,
 
