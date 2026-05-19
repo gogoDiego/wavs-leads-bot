@@ -122,3 +122,50 @@ export async function markCandidatePosted(candidateId, postedTs) {
     .eq('id', candidateId);
   if (error) throw error;
 }
+
+export async function getCandidateById(id) {
+  const { data, error } = await supabase.from('candidates').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// ── feedback ─────────────────────────────────────────────────────────────
+export async function insertFeedback({ candidate_id, user_slack_id, kind }) {
+  // Unique constraint on (candidate_id, user_slack_id, kind) makes duplicate clicks no-ops.
+  const { error } = await supabase
+    .from('feedback')
+    .upsert(
+      { candidate_id, user_slack_id, kind },
+      { onConflict: 'candidate_id,user_slack_id,kind', ignoreDuplicates: true },
+    );
+  if (error) throw error;
+}
+
+// ── stats ────────────────────────────────────────────────────────────────
+export async function getFunnelStats(funnelId) {
+  const { data: candidates, error: cErr } = await supabase
+    .from('candidates')
+    .select('id, score, posted, scoring_cost_usd')
+    .eq('funnel_id', funnelId);
+  if (cErr) throw cErr;
+
+  const total  = candidates.length;
+  const posted = candidates.filter((c) => c.posted).length;
+  const avg_score = total ? candidates.reduce((a, c) => a + (c.score || 0), 0) / total : 0;
+  const total_cost = candidates.reduce((a, c) => a + Number(c.scoring_cost_usd || 0), 0);
+
+  const counts = { good: 0, noise: 0, hide: 0, saved: 0 };
+  if (candidates.length) {
+    const ids = candidates.map((c) => c.id);
+    const { data: fb, error: fErr } = await supabase
+      .from('feedback')
+      .select('kind')
+      .in('candidate_id', ids);
+    if (fErr) throw fErr;
+    for (const row of fb ?? []) {
+      if (counts[row.kind] !== undefined) counts[row.kind] += 1;
+    }
+  }
+
+  return { total, posted, avg_score, total_cost, feedback: counts };
+}

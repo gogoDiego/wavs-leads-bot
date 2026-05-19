@@ -110,6 +110,7 @@ export async function runFunnel(funnel) {
     for (const r of qualified) {
       const card = buildLeadCard({
         funnel,
+        candidateId: r.row.id,
         tweet: r.tweet,
         score: r.score,
         suggested_angle: r.suggested_angle,

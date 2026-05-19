@@ -3,11 +3,12 @@ import {
   getFunnelByName,
   setFunnelStatus,
   deleteFunnel,
+  getFunnelStats,
 } from '../../lib/db.js';
 import { openNewFunnelSimpleModal } from '../modals/newFunnelSimple.js';
 
 const STUB = (sub) =>
-  `\`${sub}\` is coming in a later phase. Available now: \`/funnel new | list | pause <name> | delete <name>\`.`;
+  `\`${sub}\` is coming in a later phase. Available now: \`/funnel new | list | pause <name> | delete <name> | stats <name>\`.`;
 
 // Reverse of FREQUENCY_TO_CRON in newFunnelSimple.js — just for display.
 const CRON_LABEL = {
@@ -60,6 +61,35 @@ async function handlePause({ ownerSlackId, name, respond }) {
     response_type: 'ephemeral',
     text: `⏸️ *${f.name}* paused. The worker will stop scheduling it within ~60s. (To resume in v1, edit the row in Supabase; \`/funnel edit\` is Phase 5.)`,
   });
+}
+
+function pct(n, total) {
+  if (!total) return '0%';
+  return `${Math.round((n / total) * 100)}%`;
+}
+
+async function handleStats({ ownerSlackId, name, respond }) {
+  if (!name) {
+    await respond({ response_type: 'ephemeral', text: 'Usage: `/funnel stats <name>`' });
+    return;
+  }
+  const f = await getFunnelByName(ownerSlackId, name);
+  if (!f) {
+    await respond({ response_type: 'ephemeral', text: `No funnel named *${name}* found.` });
+    return;
+  }
+  const s = await getFunnelStats(f.id);
+  const fb = s.feedback;
+  const lines = [
+    `📊 *${f.name}*`,
+    `Status: ${f.status === 'active' ? '🟢 active' : '⏸️ paused'} · ${describeSchedule(f.schedule_cron)}`,
+    `Candidates scored: *${s.total}* · posted: *${s.posted}* · avg score *${s.avg_score.toFixed(1)}*`,
+    s.posted
+      ? `Feedback (of ${s.posted} posted): 👍 ${fb.good} (${pct(fb.good, s.posted)}) · 👎 ${fb.noise} (${pct(fb.noise, s.posted)}) · 📌 ${fb.saved} (${pct(fb.saved, s.posted)}) · 🙈 ${fb.hide} (${pct(fb.hide, s.posted)})`
+      : `Feedback: nothing posted yet.`,
+    `Spend: $${Number(f.spent_this_month_usd).toFixed(2)} / $${Number(f.budget_monthly_usd).toFixed(2)} this month (lifetime scoring cost: $${s.total_cost.toFixed(4)})`,
+  ];
+  await respond({ response_type: 'ephemeral', text: lines.join('\n') });
 }
 
 async function handleDelete({ ownerSlackId, name, confirm, respond }) {
@@ -119,9 +149,14 @@ export function registerFunnelCommand(app) {
           return;
         }
 
+        case 'stats': {
+          const name = tokens.slice(1).join(' ').trim();
+          await handleStats({ ownerSlackId, name, respond });
+          return;
+        }
+
         case 'show':
         case 'edit':
-        case 'stats':
         case 'fork':
           await respond({ response_type: 'ephemeral', text: STUB(sub) });
           return;

@@ -5,6 +5,7 @@ import { env } from '../lib/env.js';
 import { log } from '../lib/log.js';
 import { registerFunnelCommand } from './commands/funnel.js';
 import { registerNewFunnelSimpleModal } from './modals/newFunnelSimple.js';
+import { registerCardButtonHandlers } from './actions/cardButtons.js';
 
 const app = new App({
   token: env.SLACK_BOT_TOKEN,
@@ -16,6 +17,7 @@ const app = new App({
 
 registerFunnelCommand(app);
 registerNewFunnelSimpleModal(app);
+registerCardButtonHandlers(app);
 
 app.error(async (error) => {
   log.error('bolt_error', { error: String(error) });
