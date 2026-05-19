@@ -11,9 +11,9 @@ Hosted on Railway as two services from the same repo. Until Phase 6, run locally
 
 ---
 
-## Phase 1 setup (what you can test today)
+## Setup (what you can test today)
 
-What's wired: `/funnel new` (simple mode only). Creates a funnel row in Supabase and DMs you a confirmation. No worker, no tweets, no scoring yet.
+What's wired: `/funnel new` (simple mode) + a manually-triggered worker that fetches tweets via Apify, scores them with Claude, and posts cards to `#leads`. No cron yet, no buttons yet.
 
 ### 1. Supabase
 
@@ -37,11 +37,22 @@ What's wired: `/funnel new` (simple mode only). Creates a funnel row in Supabase
 6. Your own Slack user ID (for admin DMs in Phase 6): click your name → **Copy member ID** → `SLACK_ADMIN_USER_ID`
 7. Invite the bot to `#leads`: `/invite @WAVS Leads`.
 
-### 3. Local env
+### 3. Apify
+
+1. Create an account at https://apify.com.
+2. Console → Settings → Integrations → API → copy your **Personal API Token** → `APIFY_TOKEN`.
+3. The default actor is `apidojo/tweet-scraper` (already in `.env.example`). It's pay-per-result; small test runs are cents.
+
+### 4. Anthropic
+
+1. https://console.anthropic.com → API keys → create one → `ANTHROPIC_API_KEY`.
+2. The default model is `claude-sonnet-4-6`. Override via `ANTHROPIC_MODEL` if needed.
+
+### 5. Local env
 
 ```bash
 cp .env.example .env
-# fill in the Phase 1 vars (Slack + Supabase). Apify/Anthropic can stay empty.
+# fill in Slack + Supabase + Apify + Anthropic vars.
 npm install
 npm run slack
 ```
@@ -52,7 +63,7 @@ You should see a log line like:
 {"t":"...","level":"info","msg":"slack_connected","mode":"socket"}
 ```
 
-### 4. Try it
+### 6. Try the Slack app
 
 In any channel where the bot is, run:
 
@@ -64,12 +75,30 @@ Fill the modal, submit. You'll get a DM confirming the funnel was created. Check
 
 Other subcommands (`list`, `show`, `pause`, etc.) currently respond with a "coming soon" stub. They'll come online in Phases 3–5.
 
+### 7. Try the worker (manual run)
+
+In a second terminal, run a single funnel by name:
+
+```
+npm run worker:once -- <your-funnel-name>
+```
+
+Or every active funnel:
+
+```
+npm run worker:once -- --all
+```
+
+The worker will: search Twitter via Apify → drop tweets older than `max_age_hours` or already in `seen_tweets` → keep only those above `velocity_floor` → score with Claude → post the top `max_per_digest` (default 5) that hit `min_score` (default 7) to `#leads`. It prints a JSON summary at the end (counts, cost in USD).
+
+If nothing posts, check the summary: most likely `passed_velocity: 0` (too high a floor for what your queries return) or `qualified: 0` (Claude scored everything below 7). Tune the funnel — for now in Supabase, in Phase 5 via `/funnel edit`.
+
 ---
 
 ## Phase roadmap
 
 - **Phase 1** ✅ Scaffold, Supabase schema, `/funnel new` (simple mode).
-- **Phase 2** Worker: Apify → velocity → Claude → post cards (no buttons). Run with `npm run worker:once`.
+- **Phase 2** ✅ Worker: Apify → velocity → Claude → post cards (no buttons). Run with `npm run worker:once`.
 - **Phase 3** Cron scheduling, `/funnel list | pause | delete`.
 - **Phase 4** Card buttons, `feedback` table, `/funnel stats`.
 - **Phase 5** Advanced mode, `/funnel edit | fork`.
