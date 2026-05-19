@@ -59,6 +59,22 @@ export async function listActiveFunnels() {
   return data ?? [];
 }
 
+export async function setFunnelStatus(id, status) {
+  const { data, error } = await supabase
+    .from('funnels')
+    .update({ status })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteFunnel(id) {
+  const { error } = await supabase.from('funnels').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function addSpend(funnelId, amountUsd) {
   if (!amountUsd) return;
   const { error } = await supabase.rpc('increment_funnel_spend', {
