@@ -1,172 +1,158 @@
-import { createClient } from '@supabase/supabase-js';
+import pg from 'pg';
 import { env } from './env.js';
 
-export const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
+// Single shared pool — pg manages connection reuse. For serverless (Vercel),
+// each function instance gets its own pool; that's fine for our volume.
+export const pool = new pg.Pool({
+  connectionString: env.DATABASE_URL,
+  ssl: env.DATABASE_URL.includes('sslmode=require') || env.DATABASE_URL.includes('neon.tech')
+    ? { rejectUnauthorized: false }
+    : undefined,
+  max: 5,
 });
+
+async function q(text, params) {
+  const r = await pool.query(text, params);
+  return r.rows;
+}
+async function q1(text, params) {
+  const rows = await q(text, params);
+  return rows[0] ?? null;
+}
 
 // ── funnels ──────────────────────────────────────────────────────────────
 export async function createFunnel(row) {
-  const { data, error } = await supabase.from('funnels').insert(row).select().single();
-  if (error) throw error;
-  return data;
+  const cols = Object.keys(row);
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+  const values = cols.map((c) => row[c]);
+  return q1(
+    `insert into funnels (${cols.join(', ')}) values (${placeholders}) returning *`,
+    values,
+  );
 }
 
 export async function getFunnelById(id) {
-  const { data, error } = await supabase.from('funnels').select('*').eq('id', id).maybeSingle();
-  if (error) throw error;
-  return data;
+  return q1('select * from funnels where id = $1', [id]);
 }
 
 export async function getFunnelByName(ownerSlackId, name) {
-  const { data, error } = await supabase
-    .from('funnels')
-    .select('*')
-    .eq('owner_slack_id', ownerSlackId)
-    .ilike('name', name)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
+  return q1(
+    'select * from funnels where owner_slack_id = $1 and lower(name) = lower($2) limit 1',
+    [ownerSlackId, name],
+  );
 }
 
 export async function findFunnelByNameAnyOwner(name) {
-  const { data, error } = await supabase
-    .from('funnels')
-    .select('*')
-    .ilike('name', name)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data?.[0] ?? null;
+  return q1(
+    'select * from funnels where lower(name) = lower($1) order by created_at desc limit 1',
+    [name],
+  );
 }
 
 export async function listFunnelsByOwner(ownerSlackId) {
-  const { data, error } = await supabase
-    .from('funnels')
-    .select('*')
-    .eq('owner_slack_id', ownerSlackId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data ?? [];
+  return q(
+    'select * from funnels where owner_slack_id = $1 order by created_at desc',
+    [ownerSlackId],
+  );
 }
 
 export async function listActiveFunnels() {
-  const { data, error } = await supabase
-    .from('funnels')
-    .select('*')
-    .eq('status', 'active')
-    .order('created_at', { ascending: true });
-  if (error) throw error;
-  return data ?? [];
+  return q("select * from funnels where status = 'active' order by created_at asc");
 }
 
 export async function updateFunnel(id, patch) {
-  const { data, error } = await supabase
-    .from('funnels')
-    .update(patch)
-    .eq('id', id)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  const cols = Object.keys(patch);
+  if (!cols.length) return getFunnelById(id);
+  const sets = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
+  const values = [id, ...cols.map((c) => patch[c])];
+  return q1(
+    `update funnels set ${sets} where id = $1 returning *`,
+    values,
+  );
 }
 
 export async function setFunnelStatus(id, status) {
-  const { data, error } = await supabase
-    .from('funnels')
-    .update({ status })
-    .eq('id', id)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  return q1(
+    'update funnels set status = $2 where id = $1 returning *',
+    [id, status],
+  );
 }
 
 export async function deleteFunnel(id) {
-  const { error } = await supabase.from('funnels').delete().eq('id', id);
-  if (error) throw error;
+  await q('delete from funnels where id = $1', [id]);
+}
+
+export async function markFunnelRan(id, when = new Date()) {
+  await q('update funnels set last_run_at = $2 where id = $1', [id, when.toISOString()]);
 }
 
 export async function addSpend(funnelId, amountUsd) {
   if (!amountUsd) return;
-  const { error } = await supabase.rpc('increment_funnel_spend', {
-    p_funnel_id: funnelId,
-    p_amount: amountUsd,
-  });
-  // RPC may not exist yet — fall back to a read-modify-write that's good enough for v1.
-  if (error) {
-    const { data: row } = await supabase.from('funnels').select('spent_this_month_usd').eq('id', funnelId).single();
-    const next = Number(row?.spent_this_month_usd ?? 0) + Number(amountUsd);
-    await supabase.from('funnels').update({ spent_this_month_usd: next }).eq('id', funnelId);
-  }
+  await q(
+    'update funnels set spent_this_month_usd = spent_this_month_usd + $2 where id = $1',
+    [funnelId, amountUsd],
+  );
 }
 
 // ── seen_tweets ──────────────────────────────────────────────────────────
 export async function filterUnseenTweetIds(tweetIds) {
   if (!tweetIds.length) return new Set();
-  const { data, error } = await supabase
-    .from('seen_tweets')
-    .select('tweet_id')
-    .in('tweet_id', tweetIds);
-  if (error) throw error;
-  const seen = new Set((data ?? []).map((r) => r.tweet_id));
+  const rows = await q(
+    'select tweet_id from seen_tweets where tweet_id = any($1::text[])',
+    [tweetIds],
+  );
+  const seen = new Set(rows.map((r) => r.tweet_id));
   return new Set(tweetIds.filter((id) => !seen.has(id)));
 }
 
 export async function recordSeenTweets(tweetIds) {
   if (!tweetIds.length) return;
-  const rows = tweetIds.map((tweet_id) => ({ tweet_id }));
-  const { error } = await supabase.from('seen_tweets').upsert(rows, { onConflict: 'tweet_id' });
-  if (error) throw error;
+  await q(
+    `insert into seen_tweets (tweet_id)
+     select unnest($1::text[])
+     on conflict (tweet_id) do nothing`,
+    [tweetIds],
+  );
 }
 
 // ── candidates ───────────────────────────────────────────────────────────
 export async function insertCandidate(row) {
-  const { data, error } = await supabase.from('candidates').insert(row).select().single();
-  if (error) throw error;
-  return data;
-}
-
-export async function markFunnelRan(id, when = new Date()) {
-  const { error } = await supabase
-    .from('funnels')
-    .update({ last_run_at: when.toISOString() })
-    .eq('id', id);
-  if (error) throw error;
+  const cols = Object.keys(row);
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+  const values = cols.map((c) => row[c]);
+  return q1(
+    `insert into candidates (${cols.join(', ')}) values (${placeholders}) returning *`,
+    values,
+  );
 }
 
 export async function markCandidatePosted(candidateId, postedTs) {
-  const { error } = await supabase
-    .from('candidates')
-    .update({ posted: true, posted_ts: postedTs })
-    .eq('id', candidateId);
-  if (error) throw error;
+  await q(
+    'update candidates set posted = true, posted_ts = $2 where id = $1',
+    [candidateId, postedTs],
+  );
 }
 
 export async function getCandidateById(id) {
-  const { data, error } = await supabase.from('candidates').select('*').eq('id', id).maybeSingle();
-  if (error) throw error;
-  return data;
+  return q1('select * from candidates where id = $1', [id]);
 }
 
 // ── feedback ─────────────────────────────────────────────────────────────
 export async function insertFeedback({ candidate_id, user_slack_id, kind }) {
-  // Unique constraint on (candidate_id, user_slack_id, kind) makes duplicate clicks no-ops.
-  const { error } = await supabase
-    .from('feedback')
-    .upsert(
-      { candidate_id, user_slack_id, kind },
-      { onConflict: 'candidate_id,user_slack_id,kind', ignoreDuplicates: true },
-    );
-  if (error) throw error;
+  await q(
+    `insert into feedback (candidate_id, user_slack_id, kind)
+     values ($1, $2, $3)
+     on conflict (candidate_id, user_slack_id, kind) do nothing`,
+    [candidate_id, user_slack_id, kind],
+  );
 }
 
 // ── stats ────────────────────────────────────────────────────────────────
 export async function getFunnelStats(funnelId) {
-  const { data: candidates, error: cErr } = await supabase
-    .from('candidates')
-    .select('id, score, posted, scoring_cost_usd')
-    .eq('funnel_id', funnelId);
-  if (cErr) throw cErr;
+  const candidates = await q(
+    'select id, score, posted, scoring_cost_usd from candidates where funnel_id = $1',
+    [funnelId],
+  );
 
   const total  = candidates.length;
   const posted = candidates.filter((c) => c.posted).length;
@@ -176,12 +162,11 @@ export async function getFunnelStats(funnelId) {
   const counts = { good: 0, noise: 0, hide: 0, saved: 0 };
   if (candidates.length) {
     const ids = candidates.map((c) => c.id);
-    const { data: fb, error: fErr } = await supabase
-      .from('feedback')
-      .select('kind')
-      .in('candidate_id', ids);
-    if (fErr) throw fErr;
-    for (const row of fb ?? []) {
+    const fb = await q(
+      'select kind from feedback where candidate_id = any($1::uuid[])',
+      [ids],
+    );
+    for (const row of fb) {
       if (counts[row.kind] !== undefined) counts[row.kind] += 1;
     }
   }

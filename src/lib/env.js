@@ -1,16 +1,16 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
-// Phase 2+ vars are optional in Phase 1 so the Slack app can boot without them.
+// SLACK_APP_TOKEN is only needed in Socket Mode (local dev); HTTP/Vercel uses signing secret only.
 const schema = z.object({
   SLACK_BOT_TOKEN: z.string().startsWith('xoxb-'),
-  SLACK_APP_TOKEN: z.string().startsWith('xapp-'),
+  SLACK_APP_TOKEN: z.string().startsWith('xapp-').optional(),
   SLACK_SIGNING_SECRET: z.string().min(1),
   SLACK_LEADS_CHANNEL_ID: z.string().min(1),
   SLACK_ADMIN_USER_ID: z.string().min(1),
+  SLACK_SOCKET_MODE: z.enum(['true', 'false']).default('false'),
 
-  SUPABASE_URL: z.string().url(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  DATABASE_URL: z.string().url(),
 
   APIFY_TOKEN: z.string().optional(),
   APIFY_TWEET_ACTOR: z.string().default('apidojo/tweet-scraper'),

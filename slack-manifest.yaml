@@ -1,7 +1,11 @@
-# Paste this into https://api.slack.com/apps → Create New App → "From an app manifest"
-# After install, copy these from the app pages into your .env:
+# Paste this into https://api.slack.com/apps → Create New App → "From an app manifest".
+# AFTER you deploy to Vercel, replace {VERCEL_URL} below with your real domain
+# (e.g. wavs-leads-bot.vercel.app) and re-save the manifest in Slack's UI.
+#
+# After install, copy these into your Vercel env vars (and .env for local dev):
 #   - Basic Information → Signing Secret              → SLACK_SIGNING_SECRET
 #   - OAuth & Permissions → Bot User OAuth Token       → SLACK_BOT_TOKEN
+# For LOCAL dev with Socket Mode:
 #   - Basic Information → App-Level Tokens (create one with `connections:write`)
 #                                                      → SLACK_APP_TOKEN
 display_information:
@@ -15,6 +19,7 @@ features:
   slash_commands:
     - command: /funnel
       description: Manage your lead funnels
+      url: https://{VERCEL_URL}/api/slack
       usage_hint: "new | list | show <name> | edit <name> | pause <name> | delete <name> | stats <name> | fork <name>"
       should_escape: false
 oauth_config:
@@ -27,9 +32,11 @@ oauth_config:
       - users:read
 settings:
   event_subscriptions:
+    request_url: https://{VERCEL_URL}/api/slack
     bot_events: []
   interactivity:
     is_enabled: true
+    request_url: https://{VERCEL_URL}/api/slack
   org_deploy_enabled: false
-  socket_mode_enabled: true
+  socket_mode_enabled: false
   token_rotation_enabled: false

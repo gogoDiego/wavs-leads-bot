@@ -10,14 +10,15 @@
   "scripts": {
     "slack": "node src/slack/index.js",
     "worker": "node src/worker/index.js",
-    "worker:once": "node scripts/runWorkerOnce.js"
+    "worker:once": "node scripts/runWorkerOnce.js",
+    "worker:due": "node scripts/runDueOnce.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
     "@slack/bolt": "^3.21.0",
-    "@supabase/supabase-js": "^2.45.0",
     "apify-client": "^2.9.0",
     "dotenv": "^16.4.5",
+    "pg": "^8.21.0",
     "zod": "^3.23.8"
   }
 }

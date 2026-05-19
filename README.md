@@ -2,114 +2,118 @@
 
 Internal Slack bot for Layer that surfaces high-signal tweets to `#leads`, scored against per-user "funnels" (each defining an ICP + search criteria).
 
-Two services, one repo:
+## Architecture
 
-- **Slack app** (`npm run slack`) — Socket Mode Bolt app. Owns slash commands, modals, button interactions.
-- **Worker**     (`npm run worker`) — Cron-driven. For each active funnel: Apify fetch → dedupe → velocity filter → Claude scoring → post to `#leads`.
+- **Slack app** — Bolt app exposed as a Vercel serverless function at `/api/slack`. HTTP mode in production; Socket Mode for local dev.
+- **Worker** — GitHub Actions workflow (`.github/workflows/worker.yml`) that fires every 30 minutes. Each run calls `runDueFunnels()`, which lists active funnels and runs only those whose `interval_hours` has elapsed since `last_run_at`. Idle ticks are cheap no-ops.
+- **Database** — any Postgres reachable via `DATABASE_URL` (Supabase, Vercel Postgres, anything). Schema in `supabase/schema.sql`.
 
-Hosted on Railway as two services from the same repo. Until Phase 6, run locally.
+What you sign up for to run this: **Vercel** (free, no card), **Apify** (free $5/mo credit), **Anthropic** (API key). Plus GitHub + Slack + a Postgres host (use the Supabase you already have, or Vercel Postgres).
 
 ---
 
-## Setup (what you can test today)
+## Local development
 
-What's wired: `/funnel new` (simple mode) + a manually-triggered worker that fetches tweets via Apify, scores them with Claude, and posts cards to `#leads`. No cron yet, no buttons yet.
+Use Socket Mode locally — no public URL needed.
 
-### 1. Supabase
+### 1. Database
 
-1. Create a project at https://supabase.com.
-2. Open the SQL editor → paste & run `supabase/schema.sql`.
-3. Project settings → API:
-   - **URL** → `SUPABASE_URL`
-   - **service_role** key → `SUPABASE_SERVICE_ROLE_KEY`
+If you don't have one yet, create a free Supabase project (or Vercel Postgres later). Open the SQL editor and run `supabase/schema.sql`. Grab the **Postgres connection string** (Supabase: Project Settings → Database → Connection string → URI). It looks like `postgres://user:pass@host:5432/db?sslmode=require`.
 
-If you already have a Supabase project from earlier phases, run `supabase/migrations/001_interval_hours.sql` once to swap `schedule_cron` → `interval_hours`.
+If you're migrating from an earlier `schedule_cron` schema, run `supabase/migrations/001_interval_hours.sql` once.
 
-### 2. Slack app
+### 2. Slack app (Socket Mode for local)
 
-1. Go to https://api.slack.com/apps → **Create New App** → **From an app manifest**.
-2. Pick your workspace, paste `slack-manifest.yaml`, hit **Create**.
-3. **Install to Workspace** (you may need a workspace admin to approve).
-4. After install:
-   - **OAuth & Permissions** → copy **Bot User OAuth Token** → `SLACK_BOT_TOKEN`
-   - **Basic Information** → copy **Signing Secret** → `SLACK_SIGNING_SECRET`
-   - **Basic Information** → **App-Level Tokens** → **Generate Token** with scope `connections:write` → `SLACK_APP_TOKEN`
-5. In Slack, create/pick the `#leads` channel and grab its ID:
-   - Channel header → channel name → **About** → bottom of the modal has the channel ID → `SLACK_LEADS_CHANNEL_ID`
-6. Your own Slack user ID (for admin DMs in Phase 6): click your name → **Copy member ID** → `SLACK_ADMIN_USER_ID`
-7. Invite the bot to `#leads`: `/invite @WAVS Leads`.
+1. https://api.slack.com/apps → **Create New App** → **From an app manifest** → paste `slack-manifest.yaml` → **Create**.
+2. For *local* dev, override the manifest temporarily: set `socket_mode_enabled: true`. (After deploying to Vercel you'll switch it back.)
+3. **Install to Workspace**.
+4. Copy:
+   - **OAuth & Permissions** → Bot User OAuth Token → `SLACK_BOT_TOKEN`
+   - **Basic Information** → Signing Secret → `SLACK_SIGNING_SECRET`
+   - **Basic Information** → App-Level Tokens → generate one with `connections:write` → `SLACK_APP_TOKEN`
+5. Channel + admin IDs:
+   - `#leads` channel ID → `SLACK_LEADS_CHANNEL_ID`
+   - Your member ID → `SLACK_ADMIN_USER_ID`
+6. `/invite @WAVS Leads` in `#leads`.
 
-### 3. Apify
+### 3. Apify + Anthropic
 
-1. Create an account at https://apify.com.
-2. Console → Settings → Integrations → API → copy your **Personal API Token** → `APIFY_TOKEN`.
-3. The default actor is `apidojo/tweet-scraper` (already in `.env.example`). It's pay-per-result; small test runs are cents.
+- Apify: https://apify.com → Settings → API → token → `APIFY_TOKEN`.
+- Anthropic: https://console.anthropic.com → API keys → `ANTHROPIC_API_KEY`.
 
-### 4. Anthropic
-
-1. https://console.anthropic.com → API keys → create one → `ANTHROPIC_API_KEY`.
-2. The default model is `claude-sonnet-4-6`. Override via `ANTHROPIC_MODEL` if needed.
-
-### 5. Local env
+### 4. Run locally
 
 ```bash
 cp .env.example .env
-# fill in Slack + Supabase + Apify + Anthropic vars.
+# fill all the vars; set SLACK_SOCKET_MODE=true for local
 npm install
-npm run slack
+npm run slack       # in one terminal
+npm run worker      # in another (ticks every 5 min, runs due funnels)
 ```
 
-You should see a log line like:
+Try `/funnel new` in Slack. Other commands: `list`, `pause`, `delete`, `stats`, `edit [advanced]`, `fork`.
 
-```json
-{"t":"...","level":"info","msg":"slack_connected","mode":"socket"}
+For a single-shot worker run (manual debugging):
+
+```bash
+npm run worker:once -- <funnel-name>     # specific funnel
+npm run worker:once -- --all             # every active funnel
+npm run worker:due                       # only the ones whose interval has elapsed
 ```
 
-### 6. Try the Slack app
+---
 
-In any channel where the bot is, run:
+## Production deploy (Vercel + GitHub Actions)
 
-```
-/funnel new
-```
+### Step 1 — Deploy to Vercel
 
-Fill the modal, submit. You'll get a DM confirming the funnel was created. Check it in Supabase: `select * from funnels;`.
+1. https://vercel.com → sign up with GitHub. **No card required** for the Hobby plan.
+2. **Add New → Project** → pick `gogoDiego/wavs-leads-bot`.
+3. Framework preset: **Other**. Build command + output: leave defaults (Vercel detects `api/`).
+4. **Environment Variables** (add each to "Production" and "Preview"):
+   - `SLACK_BOT_TOKEN`
+   - `SLACK_SIGNING_SECRET`
+   - `SLACK_LEADS_CHANNEL_ID`
+   - `SLACK_ADMIN_USER_ID`
+   - `SLACK_SOCKET_MODE` = `false`
+   - `DATABASE_URL`
+   - `APIFY_TOKEN`
+   - `APIFY_TWEET_ACTOR` = `apidojo/tweet-scraper`
+   - `ANTHROPIC_API_KEY`
+   - `ANTHROPIC_MODEL` = `claude-sonnet-4-6`
+5. Deploy. You'll get a URL like `https://wavs-leads-bot-abc123.vercel.app`.
+6. **Update the Slack app manifest:** back at api.slack.com/apps → your app → **App Manifest** → replace `{VERCEL_URL}` with your real domain (3 places). Save. Slack will verify the URL by sending a challenge request — Bolt handles it automatically.
 
-Other subcommands (`list`, `show`, `pause`, etc.) currently respond with a "coming soon" stub. They'll come online in Phases 3–5.
+(Optional — instead of using your existing DB, create **Vercel Postgres** under the project → Storage tab → Create Database → Postgres. Run `supabase/schema.sql` against it via the Vercel Postgres console. Replace `DATABASE_URL` accordingly. Now Vercel = your only infra account.)
 
-### 7. Try the worker
+### Step 2 — Enable the worker on GitHub Actions
 
-In a second terminal, run a single funnel by name:
+1. In the GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**. Add:
+   - `DATABASE_URL`
+   - `SLACK_BOT_TOKEN`
+   - `SLACK_SIGNING_SECRET`
+   - `SLACK_LEADS_CHANNEL_ID`
+   - `SLACK_ADMIN_USER_ID`
+   - `APIFY_TOKEN`
+   - `ANTHROPIC_API_KEY`
+2. (Optional variables — under the same page, "Variables" tab — only if overriding defaults):
+   - `APIFY_TWEET_ACTOR`
+   - `ANTHROPIC_MODEL`
+3. **Actions tab** → enable workflows if prompted. The `Worker` workflow fires every 30 min automatically. To test immediately, click **Worker → Run workflow → Run workflow**.
 
-```
-npm run worker:once -- <your-funnel-name>
-```
+### Step 3 — Verify
 
-Or every active funnel:
-
-```
-npm run worker:once -- --all
-```
-
-To run continuously:
-
-```
-npm run worker
-```
-
-The worker ticks every 5 minutes (set `WORKER_TICK_MS` to override). On each tick, it lists active funnels and runs the ones whose `interval_hours` has elapsed since `last_run_at`. Pausing/creating/deleting funnels in Slack takes effect on the next tick — no worker restart needed.
-
-The worker will: search Twitter via Apify → drop tweets older than `max_age_hours` or already in `seen_tweets` → keep only those above `velocity_floor` → score with Claude → post the top `max_per_digest` (default 5) that hit `min_score` (default 7) to `#leads`. It prints a JSON summary at the end (counts, cost in USD).
-
-If nothing posts, check the summary: most likely `passed_velocity: 0` (too high a floor for what your queries return) or `qualified: 0` (Claude scored everything below 7). Tune the funnel — for now in Supabase, in Phase 5 via `/funnel edit`.
+- In Slack, run `/funnel list`. Should respond.
+- In the Actions tab, watch the first scheduled `Worker` run. The job log should show `tick_no_due_funnels` or per-funnel `funnel_run_done` JSON lines.
 
 ---
 
 ## Phase roadmap
 
-- **Phase 1** ✅ Scaffold, Supabase schema, `/funnel new` (simple mode).
-- **Phase 2** ✅ Worker: Apify → velocity → Claude → post cards (no buttons). Run with `npm run worker:once`.
-- **Phase 3** ✅ Cron scheduling (`npm run worker`), `/funnel list | pause | delete`.
-- **Phase 4** ✅ Card buttons (🔗 / 👍 / 👎 / 📌 / 🙈), feedback writes, `/funnel stats`.
+- **Phase 1** ✅ Scaffold, schema, `/funnel new` (simple mode).
+- **Phase 2** ✅ Worker pipeline: Apify → velocity → Claude → cards.
+- **Phase 3** ✅ Per-funnel scheduling, `/funnel list | pause | delete`.
+- **Phase 4** ✅ Card buttons + feedback, `/funnel stats`.
 - **Phase 5** ✅ Advanced mode, `/funnel edit [advanced]`, `/funnel fork`.
-- **Phase 6** Budget caps, admin daily DM, Railway deploy.
+- **Refactor** ✅ `interval_hours` replaces `schedule_cron`; `pg` replaces `@supabase/supabase-js`; Vercel handler + GitHub Actions worker; Socket Mode → HTTP for production.
+- **Phase 6** Budget caps + auto-pause, daily admin DM, deploy.

@@ -1,31 +1,17 @@
-import pkg from '@slack/bolt';
-const { App, LogLevel } = pkg;
+// Local-dev entrypoint. Uses Socket Mode if SLACK_SOCKET_MODE=true,
+// otherwise starts an HTTP server on PORT (mostly useful for tunneled testing).
 
-import { env } from '../lib/env.js';
 import { log } from '../lib/log.js';
-import { registerFunnelCommand } from './commands/funnel.js';
-import { registerNewFunnelSimpleModal } from './modals/newFunnelSimple.js';
-import { registerNewFunnelAdvancedModal } from './modals/newFunnelAdvanced.js';
-import { registerCardButtonHandlers } from './actions/cardButtons.js';
+import { createSlackApp } from './createApp.js';
 
-const app = new App({
-  token: env.SLACK_BOT_TOKEN,
-  appToken: env.SLACK_APP_TOKEN,
-  signingSecret: env.SLACK_SIGNING_SECRET,
-  socketMode: true,
-  logLevel: env.LOG_LEVEL === 'debug' ? LogLevel.DEBUG : LogLevel.INFO,
-});
-
-registerFunnelCommand(app);
-registerNewFunnelSimpleModal(app);
-registerNewFunnelAdvancedModal(app);
-registerCardButtonHandlers(app);
+const { app, mode } = createSlackApp();
 
 app.error(async (error) => {
   log.error('bolt_error', { error: String(error) });
 });
 
 (async () => {
-  await app.start();
-  log.info('slack_connected', { mode: 'socket' });
+  const port = Number(process.env.PORT ?? 3000);
+  await app.start(port);
+  log.info('slack_connected', { mode, port: mode === 'http' ? port : undefined });
 })();
