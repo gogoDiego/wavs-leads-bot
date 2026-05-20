@@ -244,6 +244,13 @@ export function registerFunnelCommand(app) {
           });
       }
     } catch (err) {
+      // Surface Slack WebAPI error details to Vercel logs — err.message alone
+      // is too vague ("invalid_arguments") to pinpoint a malformed view field.
+      console.error('funnel_command_failed', {
+        command: command.text,
+        error: err.message,
+        data: err.data ? JSON.stringify(err.data) : undefined,
+      });
       await respond({
         response_type: 'ephemeral',
         text: `Something broke handling \`/funnel ${command.text}\`: ${err.message}`,

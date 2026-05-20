@@ -61,7 +61,7 @@ function buildView({ funnel } = {}) {
       input('search_queries', 'Search queries (one per line)', {
         multiline: true,
         initial_value: (f.search_queries ?? []).join('\n'),
-        placeholder: '"event-driven architecture"\n"durable execution" lang:en\n"distributed tracing" -hiring',
+        placeholder: '"event-driven architecture" / "durable execution" lang:en / "distributed tracing" -hiring',
       }),
       input('relevance_prompt', 'Relevance prompt (sent to Claude as system prompt)', {
         multiline: true,
