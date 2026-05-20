@@ -15,7 +15,9 @@ import {
 import { buildLeadCard } from '../slack/views/leadCard.js';
 
 // Safety cap so a runaway query can't trigger 1000 Claude calls.
-const MAX_TO_SCORE = 40;
+// Also constrained by Vercel's 60s function timeout — each scoring call
+// is ~0.5–1.5s with caching, so 20 stays well within budget.
+const MAX_TO_SCORE = 20;
 
 let _slack;
 function slack() {
