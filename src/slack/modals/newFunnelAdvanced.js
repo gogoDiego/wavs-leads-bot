@@ -66,7 +66,7 @@ function buildView({ funnel } = {}) {
       input('relevance_prompt', 'Relevance prompt (sent to Claude as system prompt)', {
         multiline: true,
         initial_value: f.relevance_prompt,
-        max_length: 8000,
+        max_length: 3000,
       }),
       {
         type: 'section',
