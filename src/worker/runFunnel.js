@@ -65,35 +65,41 @@ export async function runFunnel(funnel) {
 
     const toScore = withVelocity.slice(0, MAX_TO_SCORE);
 
-    // 5. Claude scoring + persist
-    const scoredRows = [];
-    for (const { tweet, v } of toScore) {
-      try {
-        const result = await scoreTweet({ funnel, tweet });
-        summary.cost_usd += result.cost_usd;
-        const row = await insertCandidate({
-          funnel_id:         funnel.id,
-          tweet_id:          tweet.tweet_id,
-          author_handle:     tweet.author,
-          tweet_url:         tweet.url,
-          tweet_text:        tweet.text,
-          tweet_created_at:  tweet.created_at.toISOString(),
-          likes:    tweet.likes,
-          replies:  tweet.replies,
-          quotes:   tweet.quotes,
-          retweets: tweet.retweets,
-          velocity: v,
-          score:           result.score,
-          suggested_angle: result.suggested_angle,
-          reasoning:       result.reasoning,
-          scoring_cost_usd: result.cost_usd,
-        });
-        scoredRows.push({ row, tweet, v, ...result });
-        summary.scored += 1;
-      } catch (err) {
-        log.warn('score_failed', { tweet_id: tweet.tweet_id, error: String(err) });
-      }
-    }
+    // 5. Claude scoring + persist — in parallel. Anthropic happily takes
+    // ~20 concurrent calls and prompt-cache reads are quick, so total wall
+    // time is dominated by the single slowest call (~2-3s) instead of
+    // accumulating across all of them. Keeps us under Vercel's 60s cap.
+    const results = await Promise.all(
+      toScore.map(async ({ tweet, v }) => {
+        try {
+          const result = await scoreTweet({ funnel, tweet });
+          const row = await insertCandidate({
+            funnel_id:         funnel.id,
+            tweet_id:          tweet.tweet_id,
+            author_handle:     tweet.author,
+            tweet_url:         tweet.url,
+            tweet_text:        tweet.text,
+            tweet_created_at:  tweet.created_at.toISOString(),
+            likes:    tweet.likes,
+            replies:  tweet.replies,
+            quotes:   tweet.quotes,
+            retweets: tweet.retweets,
+            velocity: v,
+            score:           result.score,
+            suggested_angle: result.suggested_angle,
+            reasoning:       result.reasoning,
+            scoring_cost_usd: result.cost_usd,
+          });
+          return { row, tweet, v, ...result };
+        } catch (err) {
+          log.warn('score_failed', { tweet_id: tweet.tweet_id, error: String(err) });
+          return null;
+        }
+      }),
+    );
+    const scoredRows = results.filter(Boolean);
+    summary.scored = scoredRows.length;
+    summary.cost_usd = scoredRows.reduce((sum, r) => sum + r.cost_usd, 0);
 
     // 6. Always record seen — even for tweets we couldn't score, so we don't retry endlessly.
     await recordSeenTweets(toScore.map(({ tweet }) => tweet.tweet_id));
