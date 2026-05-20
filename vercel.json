@@ -5,6 +5,10 @@
     "api/worker.js": { "maxDuration": 60 }
   },
   "crons": [
-    { "path": "/api/worker", "schedule": "*/30 * * * *" }
+    {
+      "path": "/api/worker",
+      "comment": "Vercel Hobby caps cron to once per day. Fires at 13:00 UTC = 8 AM Central (during DST). Funnels' interval_hours still applies on top.",
+      "schedule": "0 13 * * *"
+    }
   ]
 }
