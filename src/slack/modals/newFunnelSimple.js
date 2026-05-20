@@ -145,7 +145,7 @@ export function registerNewFunnelSimpleModal(app) {
     const icp        = v.icp.value.value.trim();
     const keywords   = splitCsv(v.keywords?.value?.value);
     const hard_skips = splitCsv(v.hard_skips?.value?.value);
-    const frequency  = v.frequency.value.value.selected_option.value;
+    const frequency  = v.frequency.value.selected_option.value;
     const ownerSlackId = body.user.id;
 
     // Name uniqueness — only fight conflicts that aren't the current funnel.

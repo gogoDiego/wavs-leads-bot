@@ -127,7 +127,7 @@ export function registerNewFunnelAdvancedModal(app) {
       max_per_digest:     v.max_per_digest.value.value,
       interval_hours:     v.interval_hours.value.value,
       budget_monthly_usd: v.budget_monthly_usd.value.value,
-      status:             v.status.value.value.selected_option.value,
+      status:             v.status.value.selected_option.value,
     };
 
     const parsed = submitSchema.safeParse(raw);
