@@ -9,35 +9,53 @@ function client() {
   return _client;
 }
 
+// Scweet tweet output → normalized shape used by runFunnel. The fallbacks let
+// the same normalizer accept a few historical actor schemas without code edits.
 function normalize(raw) {
-  // apidojo/tweet-scraper fields vary slightly between versions; coalesce defensively.
-  const author = raw.author?.userName || raw.author?.username || raw.user?.username;
-  const created = raw.createdAt || raw.created_at || raw.date;
-  const url = raw.url || (author && raw.id ? `https://twitter.com/${author}/status/${raw.id}` : null);
+  const author = raw.handle
+    || raw.author?.handle
+    || raw.author?.userName
+    || raw.author?.username
+    || raw.user?.username;
+  const created = raw.created_at || raw.createdAt || raw.date;
+  const url = raw.tweet_url
+    || raw.url
+    || (author && raw.id ? `https://twitter.com/${author}/status/${raw.id}` : null);
   return {
-    tweet_id:   String(raw.id ?? raw.tweetId ?? raw.conversationId ?? ''),
+    tweet_id:   String(raw.id ?? raw.tweetId ?? raw.conversation_id ?? raw.conversationId ?? ''),
     text:       raw.text ?? raw.fullText ?? '',
     url,
     author,
     created_at: created ? new Date(created) : null,
-    likes:    raw.likeCount    ?? raw.likes    ?? raw.favoriteCount ?? 0,
-    replies:  raw.replyCount   ?? raw.replies  ?? 0,
-    quotes:   raw.quoteCount   ?? raw.quotes   ?? 0,
-    retweets: raw.retweetCount ?? raw.retweets ?? 0,
+    likes:    raw.favorite_count ?? raw.likeCount    ?? raw.likes    ?? raw.favoriteCount ?? 0,
+    replies:  raw.reply_count    ?? raw.replyCount   ?? raw.replies  ?? 0,
+    quotes:   raw.quote_count    ?? raw.quoteCount   ?? raw.quotes   ?? 0,
+    retweets: raw.retweet_count  ?? raw.retweetCount ?? raw.retweets ?? 0,
   };
 }
 
 export async function searchTweets({ searchTerms, maxItems = 50, language = 'en' }) {
   if (!searchTerms?.length) return [];
 
+  // Scweet takes a single search_query per actor run. Running multiple times
+  // would burn the per-run startup fee each time, so collapse to the first
+  // query — owners should combine queries with OR inside one string instead.
+  if (searchTerms.length > 1) {
+    log.warn('apify_multi_query_collapsed', {
+      provided: searchTerms.length,
+      using: searchTerms[0],
+    });
+  }
+
   const input = {
-    searchTerms,
-    maxItems,
-    sort: 'Latest',
-    tweetLanguage: language,
+    source_mode:  'search',
+    search_query: searchTerms[0],
+    max_items:    maxItems,
+    lang:         language,
+    search_sort:  'Latest',
   };
 
-  log.info('apify_run_start', { actor: env.APIFY_TWEET_ACTOR, searchTerms, maxItems });
+  log.info('apify_run_start', { actor: env.APIFY_TWEET_ACTOR, query: searchTerms[0], maxItems });
   const run = await client().actor(env.APIFY_TWEET_ACTOR).call(input, { waitSecs: 180 });
   const { items } = await client().dataset(run.defaultDatasetId).listItems();
   log.info('apify_run_done', { items: items.length, runId: run.id });
