@@ -11,7 +11,8 @@
     "slack": "node src/slack/index.js",
     "worker": "node src/worker/index.js",
     "worker:once": "node scripts/runWorkerOnce.js",
-    "worker:due": "node scripts/runDueOnce.js"
+    "worker:due": "node scripts/runDueOnce.js",
+    "db:schema": "node scripts/runSchema.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
