@@ -38,10 +38,10 @@ export async function runFunnel(funnel) {
   };
 
   try {
-    // 1. Fetch
+    // 1. Fetch (Scweet rejects max_items < 100)
     const raw = await searchTweets({
       searchTerms: funnel.search_queries,
-      maxItems: 50,
+      maxItems: 100,
     });
     summary.fetched = raw.length;
 
