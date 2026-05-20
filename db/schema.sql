@@ -1,5 +1,5 @@
 -- wavs-leads-bot schema (v1)
--- Run in Supabase SQL editor. Idempotent: safe to re-run.
+-- Paste into any Postgres SQL editor (Vercel Postgres / Neon / Supabase / psql). Idempotent: safe to re-run.
 
 create extension if not exists "pgcrypto";
 
@@ -28,10 +28,13 @@ create table if not exists funnels (
   spent_this_month_usd    numeric(10,4) not null default 0,
 
   created_at              timestamptz not null default now(),
-  updated_at              timestamptz not null default now(),
-
-  unique (owner_slack_id, lower(name))
+  updated_at              timestamptz not null default now()
 );
+
+-- Case-insensitive uniqueness per owner. Done as a unique index (not an inline
+-- UNIQUE constraint) because Postgres only allows expressions like lower(name)
+-- in indexes, not in inline column-list constraints.
+create unique index if not exists funnels_owner_name_lower_uq on funnels (owner_slack_id, lower(name));
 
 create index if not exists funnels_active_idx on funnels (status) where status = 'active';
 
