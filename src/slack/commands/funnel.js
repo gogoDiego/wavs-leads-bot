@@ -102,11 +102,13 @@ async function handleStats({ ownerSlackId, name, respond }) {
   await respond({ response_type: 'in_channel', text: lines.join('\n') });
 }
 
-async function handleRun({ name }) {
-  // Silent on the slash command — the per-funnel parent message in #leads
-  // (posted from runFunnel.js with stats + tags + Edit-funnel button) is the
-  // only visible output of a /funnel run. Worker continues in the same
-  // function context via waitUntil after the ack returns to Slack.
+async function handleRun({ name, respond }) {
+  // Show a short "Running…" ephemeral so the user knows the worker fired.
+  // Once the run finishes (parent + cards land in #leads), the ephemeral is
+  // deleted via response_url — keeping the in-channel slate clean.
+  const label = name ? `*${name}*` : 'all active funnels';
+  await respond({ response_type: 'ephemeral', text: `🤖 Running ${label}…` });
+
   waitUntil((async () => {
     try {
       await withWorkerLock(async () => {
@@ -114,9 +116,14 @@ async function handleRun({ name }) {
         return runAllActive();
       });
     } catch (err) {
-      // No visible feedback on failure — surfaced in Vercel logs only.
-      // (Conscious trade-off: user explicitly asked for zero ephemerals/DMs.)
       console.error('funnel_run_failed', { name, error: err.message });
+    }
+    // Auto-delete the "Running…" ephemeral. Slack accepts delete_original
+    // via the response_url within 30 min. If it fails (rare), log silently.
+    try {
+      await respond({ delete_original: true });
+    } catch (err) {
+      console.warn('funnel_run_ephemeral_delete_failed', { error: err.message });
     }
   })());
 }
@@ -266,7 +273,7 @@ export function registerFunnelCommand(app) {
 
         case 'run': {
           const name = tokens.slice(1).join(' ').trim() || null;
-          await handleRun({ name });
+          await handleRun({ name, respond });
           return;
         }
 

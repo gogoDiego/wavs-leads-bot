@@ -2,7 +2,6 @@ import { ACTION_IDS } from '../views/leadCard.js';
 import { insertFeedback, getCandidateById, getFunnelById } from '../../lib/db.js';
 import { log } from '../../lib/log.js';
 import { openNewFunnelAdvancedModal } from '../modals/newFunnelAdvanced.js';
-import { openNewFunnelSimpleModal } from '../modals/newFunnelSimple.js';
 
 const KIND_OF = {
   [ACTION_IDS.hide]:  'hide',
@@ -62,10 +61,10 @@ async function handleEditFunnel({ ack, body, client }) {
       log.warn('edit_funnel_not_found', { funnel_id });
       return;
     }
-    const opener = funnel.prompt_mode === 'advanced'
-      ? openNewFunnelAdvancedModal
-      : openNewFunnelSimpleModal;
-    await opener({ client, trigger_id: body.trigger_id, funnel });
+    // Always open advanced — the button is a quick-edit for thresholds
+    // (velocity_floor, min_score, etc.), not just the ICP/keywords.
+    // Use `/funnel edit <name>` if you want the simple modal instead.
+    await openNewFunnelAdvancedModal({ client, trigger_id: body.trigger_id, funnel });
   } catch (err) {
     // Silent for user — they'll see the modal didn't open and retry.
     log.error('edit_funnel_open_failed', { funnel_id, error: String(err) });
