@@ -182,10 +182,18 @@ export function registerNewFunnelSimpleModal(app) {
         row = await updateFunnel(funnel_id, payload);
         log.info('funnel_updated', { id: row.id, owner: ownerSlackId, name });
       } else {
+        // Permissive defaults so the first run actually surfaces something.
+        // The schema defaults (velocity_floor: 20, max_age_hours: 12) are too
+        // strict for funnels in the first-iteration phase; users can tighten
+        // via /funnel edit advanced once they see what kind of tweets land.
         row = await createFunnel({
           ...payload,
           owner_slack_id: ownerSlackId,
           status: 'active',
+          velocity_floor: 0,
+          max_age_hours:  72,
+          max_per_digest: 10,
+          min_score:      6,
         });
         log.info('funnel_created', { id: row.id, owner: ownerSlackId, name, frequency });
       }

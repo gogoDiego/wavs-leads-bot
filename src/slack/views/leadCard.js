@@ -51,7 +51,7 @@ export function buildRunSummaryMessage({ funnel, qualified, summary }) {
     ? `🤖 *${funnel.name}* — *${qualified.length}* lead${qualified.length === 1 ? '' : 's'} (top score ${topScore}/10)`
     : `🤖 *${funnel.name}* — no qualified leads this run`;
 
-  const stats = `fetched *${summary.fetched}* · scored *${summary.scored}* · posted *${qualified.length}* · cost *$${cost}*`;
+  const stats = `fetched *${summary.fetched}* · passed velocity *${summary.passed_velocity}* · scored *${summary.scored}* · posted *${qualified.length}* · cost *$${cost}*`;
 
   const tags = tagsForFunnel(funnel);
   const tagsLine = tags.length > 0

@@ -300,6 +300,15 @@ export function registerNewFunnelAiModal(app) {
         simple_config:  { icp: meta.intent, keywords, hard_skips, frequency: meta.frequency },
         relevance_prompt,
         interval_hours: FREQUENCY_TO_HOURS[meta.frequency],
+        // AI-built funnels are typically experimental — let Claude do the
+        // filtering instead of the velocity heuristic so the user actually
+        // sees results on the first run.
+        velocity_floor: 0,
+        // More permissive defaults for tuning: catch tweets from the last
+        // ~3 days, surface up to 10 per run.
+        max_age_hours:  72,
+        max_per_digest: 10,
+        min_score:      6,
       });
       log.info('funnel_created_ai', { id: row.id, owner: ownerSlackId, name: meta.name, frequency: meta.frequency });
     } catch (err) {
