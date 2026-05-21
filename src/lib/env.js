@@ -24,7 +24,7 @@ const schema = z.object({
   CRON_SECRET: z.string().optional(),
 
   APIFY_TOKEN: z.string().optional(),
-  APIFY_TWEET_ACTOR: z.string().default('altimis/scweet'),
+  APIFY_TWEET_ACTOR: z.string().default('apidojo/tweet-scraper'),
 
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-6'),

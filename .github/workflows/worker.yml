@@ -35,7 +35,7 @@ jobs:
           SLACK_LEADS_CHANNEL_ID:  ${{ secrets.SLACK_LEADS_CHANNEL_ID }}
           SLACK_ADMIN_USER_ID:     ${{ secrets.SLACK_ADMIN_USER_ID }}
           APIFY_TOKEN:             ${{ secrets.APIFY_TOKEN }}
-          APIFY_TWEET_ACTOR:       ${{ vars.APIFY_TWEET_ACTOR || 'altimis/scweet' }}
+          APIFY_TWEET_ACTOR:       ${{ vars.APIFY_TWEET_ACTOR || 'apidojo/tweet-scraper' }}
           ANTHROPIC_API_KEY:       ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_MODEL:         ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
           TZ:                      America/Chicago
