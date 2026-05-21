@@ -31,7 +31,6 @@ ${skip}
 Respond with ONLY a JSON object, no preamble:
 {
   "score": <integer 1-10>,
-  "suggested_angle": "<one-sentence DM/reply opener tailored to this tweet>",
   "reasoning": "<one short sentence on why this score>"
 }`;
 }

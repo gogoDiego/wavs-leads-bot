@@ -71,7 +71,7 @@ export function buildRunSummaryMessage({ funnel, qualified, summary }) {
   };
 }
 
-export function buildLeadCard({ funnel, candidateId, tweet, score, suggested_angle, velocity }) {
+export function buildLeadCard({ funnel, candidateId, tweet, score, velocity }) {
   const headerText = `*${funnel.name}* · score *${score}/10* · <@${funnel.owner_slack_id}>`;
   const tweetText = `> ${truncate(tweet.text).replace(/\n/g, '\n> ')}`;
 
@@ -85,13 +85,6 @@ export function buildLeadCard({ funnel, candidateId, tweet, score, suggested_ang
     },
     { type: 'section', text: { type: 'mrkdwn', text: tweetText } },
   ];
-
-  if (suggested_angle) {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: `*Suggested angle:* ${truncate(suggested_angle, 400)}` },
-    });
-  }
 
   blocks.push({
     type: 'actions',

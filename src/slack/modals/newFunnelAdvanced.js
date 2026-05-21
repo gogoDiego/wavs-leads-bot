@@ -202,18 +202,10 @@ export function registerNewFunnelAdvancedModal(app) {
         row = await createFunnel({ ...payload, owner_slack_id: ownerSlackId });
         log.info('funnel_created_advanced', { id: row.id, owner: ownerSlackId, name: row.name });
       }
-      await client.chat.postMessage({
-        channel: ownerSlackId,
-        text: isEdit
-          ? `✏️ Funnel *${row.name}* updated (advanced). Worker will pick up the new config within ~60s.`
-          : `✅ Funnel *${row.name}* created in advanced mode.`,
-      });
+      // Silent success — no DM. Verify via /funnel list or wait for the next run in #leads.
     } catch (err) {
+      // Silent failure for the user. Vercel logs surface the issue.
       log.error('funnel_advanced_save_failed', { error: String(err), name: parsed.data.name, isEdit });
-      await client.chat.postMessage({
-        channel: ownerSlackId,
-        text: `❌ Couldn't save funnel *${parsed.data.name}*: ${err.message}`,
-      });
     }
   });
 }

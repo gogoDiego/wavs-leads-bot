@@ -188,18 +188,11 @@ export function registerNewFunnelSimpleModal(app) {
         log.info('funnel_created', { id: row.id, owner: ownerSlackId, name, frequency });
       }
 
-      await client.chat.postMessage({
-        channel: ownerSlackId,
-        text: isEdit
-          ? `✏️ Funnel *${name}* updated. Worker will pick up the new config within ~5min.`
-          : `✅ Funnel *${name}* created. Status: \`active\`. It will check ${FREQUENCY_LABELS[frequency].toLowerCase()} once the worker is online.`,
-      });
+      // Silent success — no DM. Saved funnel will show up in /funnel list
+      // and start posting to #leads on the next worker tick.
     } catch (err) {
+      // Silent failure for the user. Vercel logs surface the issue.
       log.error('funnel_save_failed', { error: String(err), name, isEdit });
-      await client.chat.postMessage({
-        channel: ownerSlackId,
-        text: `❌ Couldn't save funnel *${name}*: ${err.message}`,
-      });
     }
   });
 }

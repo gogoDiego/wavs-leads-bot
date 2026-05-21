@@ -32,20 +32,18 @@ async function handleFeedback({ kind, body, ack, client, respond }) {
   }
 
   // 🙈 Hide: actually remove the message from the channel. Feedback stays in DB.
+  // If the delete fails (rare — bot owns its own messages), it's logged silently.
   if (kind === 'hide' && channel && message_ts) {
     try {
       await client.chat.delete({ channel, ts: message_ts });
-      // No follow-up ephemeral — the user's signal of success is the card vanishing.
-      return;
     } catch (err) {
       log.warn('hide_delete_failed', { candidate_id, error: String(err) });
-      await respond({ response_type: 'ephemeral', replace_original: false,
-        text: `Couldn't delete the card (${err.message}). Feedback was still saved.` });
-      return;
     }
+    return;
   }
 
-  // 📌 Saved: open a thread on the parent card so the user can drop notes / DM drafts.
+  // 📌 Saved: open a thread reply on the card so the user can drop notes / DM drafts.
+  // The thread reply IS the public confirmation — no separate ephemeral needed.
   if (kind === 'saved' && channel && message_ts) {
     try {
       const cand = await getCandidateById(candidate_id);
@@ -60,17 +58,17 @@ async function handleFeedback({ kind, body, ack, client, respond }) {
     }
   }
 
-  await respond({ response_type: 'ephemeral', replace_original: false, text: `${KIND_LABEL[kind]}.` });
+  // 👍 / 👎: feedback row is recorded silently. /funnel stats shows the totals.
+  // No ephemeral confirmation per user preference (zero "only visible to you" noise).
 }
 
-async function handleEditFunnel({ ack, body, client, respond }) {
+async function handleEditFunnel({ ack, body, client }) {
   await ack();
   const funnel_id = body.actions[0].value;
   try {
     const funnel = await getFunnelById(funnel_id);
     if (!funnel) {
-      await respond({ response_type: 'ephemeral', replace_original: false,
-        text: `Couldn't find this card's funnel. It may have been deleted.` });
+      log.warn('edit_funnel_not_found', { funnel_id });
       return;
     }
     const opener = funnel.prompt_mode === 'advanced'
@@ -78,9 +76,8 @@ async function handleEditFunnel({ ack, body, client, respond }) {
       : openNewFunnelSimpleModal;
     await opener({ client, trigger_id: body.trigger_id, funnel });
   } catch (err) {
+    // Silent for user — they'll see the modal didn't open and retry.
     log.error('edit_funnel_open_failed', { funnel_id, error: String(err) });
-    await respond({ response_type: 'ephemeral', replace_original: false,
-      text: `Couldn't open the funnel edit modal: ${err.message}` });
   }
 }
 

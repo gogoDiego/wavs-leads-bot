@@ -69,7 +69,6 @@ export async function scoreTweet({ funnel, tweet }) {
 
   return {
     score:           Math.max(1, Math.min(10, Math.round(Number(parsed.score) || 0))),
-    suggested_angle: String(parsed.suggested_angle ?? '').slice(0, 500),
     reasoning:       String(parsed.reasoning ?? '').slice(0, 500),
     cost_usd,
     input_tokens:        u.input_tokens                ?? 0,

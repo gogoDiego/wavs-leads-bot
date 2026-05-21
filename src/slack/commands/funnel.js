@@ -33,7 +33,7 @@ async function handleList({ ownerSlackId, respond }) {
   const rows = await listFunnelsByOwner(ownerSlackId);
   if (!rows.length) {
     await respond({
-      response_type: 'ephemeral',
+      response_type: 'in_channel',
       text: 'You don\'t have any funnels yet. Run `/funnel new` to make one.',
     });
     return;
@@ -45,28 +45,28 @@ async function handleList({ ownerSlackId, respond }) {
   });
 
   await respond({
-    response_type: 'ephemeral',
+    response_type: 'in_channel',
     text: `Your funnels:\n${lines.join('\n')}`,
   });
 }
 
 async function handlePause({ ownerSlackId, name, respond }) {
   if (!name) {
-    await respond({ response_type: 'ephemeral', text: 'Usage: `/funnel pause <name>`' });
+    await respond({ response_type: 'in_channel', text: 'Usage: `/funnel pause <name>`' });
     return;
   }
   const f = await getFunnelByName(ownerSlackId, name);
   if (!f) {
-    await respond({ response_type: 'ephemeral', text: `No funnel named *${name}* found.` });
+    await respond({ response_type: 'in_channel', text: `No funnel named *${name}* found.` });
     return;
   }
   if (f.status === 'paused') {
-    await respond({ response_type: 'ephemeral', text: `*${f.name}* is already paused.` });
+    await respond({ response_type: 'in_channel', text: `*${f.name}* is already paused.` });
     return;
   }
   await setFunnelStatus(f.id, 'paused');
   await respond({
-    response_type: 'ephemeral',
+    response_type: 'in_channel',
     text: `⏸️ *${f.name}* paused. The worker will skip it on the next tick. To resume, run \`/funnel edit ${f.name} advanced\` and flip status to active.`,
   });
 }
@@ -78,12 +78,12 @@ function pct(n, total) {
 
 async function handleStats({ ownerSlackId, name, respond }) {
   if (!name) {
-    await respond({ response_type: 'ephemeral', text: 'Usage: `/funnel stats <name>`' });
+    await respond({ response_type: 'in_channel', text: 'Usage: `/funnel stats <name>`' });
     return;
   }
   const f = await getFunnelByName(ownerSlackId, name);
   if (!f) {
-    await respond({ response_type: 'ephemeral', text: `No funnel named *${name}* found.` });
+    await respond({ response_type: 'in_channel', text: `No funnel named *${name}* found.` });
     return;
   }
   const s = await getFunnelStats(f.id);
@@ -97,46 +97,36 @@ async function handleStats({ ownerSlackId, name, respond }) {
       : `Feedback: nothing posted yet.`,
     `Spend: $${Number(f.spent_this_month_usd).toFixed(2)} / $${Number(f.budget_monthly_usd).toFixed(2)} this month (lifetime scoring cost: $${s.total_cost.toFixed(4)})`,
   ];
-  await respond({ response_type: 'ephemeral', text: lines.join('\n') });
+  await respond({ response_type: 'in_channel', text: lines.join('\n') });
 }
 
-async function handleRun({ name, respond }) {
-  // Slack expects an ack within 3s. We respond immediately and use
-  // Vercel's waitUntil to keep the function alive while the worker runs,
-  // then update the ephemeral with a short pointer to #leads (where the
-  // per-funnel parent message has the full stats + Edit-funnel button).
-  const label = name ? `*${name}*` : 'all active funnels';
-  await respond({ response_type: 'ephemeral', text: `🤖 Running ${label}… results in <#${env.SLACK_LEADS_CHANNEL_ID}> in 30–60s.` });
-
+async function handleRun({ name }) {
+  // Silent on the slash command — the per-funnel parent message in #leads
+  // (posted from runFunnel.js with stats + tags + Edit-funnel button) is the
+  // only visible output of a /funnel run. Worker continues in the same
+  // function context via waitUntil after the ack returns to Slack.
   waitUntil((async () => {
     try {
-      const { skipped, reason, result } = await withWorkerLock(async () => {
+      await withWorkerLock(async () => {
         if (name) return [await runFunnelByName(name)];
         return runAllActive();
       });
-      if (skipped) {
-        await respond({ response_type: 'ephemeral', replace_original: true,
-          text: `⚠️ Skipped: another worker run is in flight (${reason}). Try again in a minute.` });
-        return;
-      }
-      const totalPosted = result.reduce((a, s) => a + s.posted, 0);
-      await respond({ response_type: 'ephemeral', replace_original: true,
-        text: `✅ Done. *${totalPosted}* lead${totalPosted === 1 ? '' : 's'} posted to <#${env.SLACK_LEADS_CHANNEL_ID}>.` });
     } catch (err) {
-      const msg = err.code === 'FUNNEL_NOT_FOUND' ? err.message : `Worker failed: ${err.message}`;
-      await respond({ response_type: 'ephemeral', replace_original: true, text: `❌ ${msg}` });
+      // No visible feedback on failure — surfaced in Vercel logs only.
+      // (Conscious trade-off: user explicitly asked for zero ephemerals/DMs.)
+      console.error('funnel_run_failed', { name, error: err.message });
     }
   })());
 }
 
 async function handleEdit({ ownerSlackId, name, mode, client, trigger_id, respond }) {
   if (!name) {
-    await respond({ response_type: 'ephemeral', text: 'Usage: `/funnel edit <name> [advanced]`' });
+    await respond({ response_type: 'in_channel', text: 'Usage: `/funnel edit <name> [advanced]`' });
     return;
   }
   const f = await getFunnelByName(ownerSlackId, name);
   if (!f) {
-    await respond({ response_type: 'ephemeral', text: `No funnel named *${name}* found.` });
+    await respond({ response_type: 'in_channel', text: `No funnel named *${name}* found.` });
     return;
   }
   const chosen = mode || f.prompt_mode || 'simple';
@@ -149,12 +139,12 @@ async function handleEdit({ ownerSlackId, name, mode, client, trigger_id, respon
 
 async function handleFork({ ownerSlackId, name, respond }) {
   if (!name) {
-    await respond({ response_type: 'ephemeral', text: 'Usage: `/funnel fork <name>`' });
+    await respond({ response_type: 'in_channel', text: 'Usage: `/funnel fork <name>`' });
     return;
   }
   const src = await findFunnelByNameAnyOwner(name);
   if (!src) {
-    await respond({ response_type: 'ephemeral', text: `No funnel named *${name}* found.` });
+    await respond({ response_type: 'in_channel', text: `No funnel named *${name}* found.` });
     return;
   }
 
@@ -184,31 +174,31 @@ async function handleFork({ ownerSlackId, name, respond }) {
   });
 
   await respond({
-    response_type: 'ephemeral',
+    response_type: 'in_channel',
     text: `🍴 Forked *${src.name}* (owned by <@${src.owner_slack_id}>) → *${row.name}*. Run \`/funnel edit ${row.name}\` to tune before it runs.`,
   });
 }
 
 async function handleDelete({ ownerSlackId, name, confirm, respond }) {
   if (!name) {
-    await respond({ response_type: 'ephemeral', text: 'Usage: `/funnel delete <name> confirm`' });
+    await respond({ response_type: 'in_channel', text: 'Usage: `/funnel delete <name> confirm`' });
     return;
   }
   const f = await getFunnelByName(ownerSlackId, name);
   if (!f) {
-    await respond({ response_type: 'ephemeral', text: `No funnel named *${name}* found.` });
+    await respond({ response_type: 'in_channel', text: `No funnel named *${name}* found.` });
     return;
   }
   if (!confirm) {
     await respond({
-      response_type: 'ephemeral',
+      response_type: 'in_channel',
       text: `⚠️ This will permanently delete *${f.name}* and all its candidates + feedback. To proceed, run:\n\`/funnel delete ${f.name} confirm\``,
     });
     return;
   }
   await deleteFunnel(f.id);
   await respond({
-    response_type: 'ephemeral',
+    response_type: 'in_channel',
     text: `🗑️ Deleted *${f.name}*.`,
   });
 }
@@ -263,7 +253,7 @@ export function registerFunnelCommand(app) {
 
         case 'run': {
           const name = tokens.slice(1).join(' ').trim() || null;
-          await handleRun({ name, respond });
+          await handleRun({ name });
           return;
         }
 
@@ -274,12 +264,12 @@ export function registerFunnelCommand(app) {
         }
 
         case 'show':
-          await respond({ response_type: 'ephemeral', text: STUB(sub) });
+          await respond({ response_type: 'in_channel', text: STUB(sub) });
           return;
 
         default:
           await respond({
-            response_type: 'ephemeral',
+            response_type: 'in_channel',
             text: `Unknown subcommand: \`${sub}\`. Try \`/funnel list\`.`,
           });
       }
@@ -292,7 +282,7 @@ export function registerFunnelCommand(app) {
         data: err.data ? JSON.stringify(err.data) : undefined,
       });
       await respond({
-        response_type: 'ephemeral',
+        response_type: 'in_channel',
         text: `Something broke handling \`/funnel ${command.text}\`: ${err.message}`,
       });
     }

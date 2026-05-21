@@ -86,7 +86,6 @@ export async function runFunnel(funnel) {
             retweets: tweet.retweets,
             velocity: v,
             score:           result.score,
-            suggested_angle: result.suggested_angle,
             reasoning:       result.reasoning,
             scoring_cost_usd: result.cost_usd,
           });
@@ -133,7 +132,6 @@ export async function runFunnel(funnel) {
         candidateId: r.row.id,
         tweet: r.tweet,
         score: r.score,
-        suggested_angle: r.suggested_angle,
         velocity: r.v,
       });
       const resp = await slack().chat.postMessage({
