@@ -25,7 +25,7 @@ function statusOption(value) {
 }
 
 function input(block_id, label, opts = {}) {
-  return {
+  const block = {
     type: 'input',
     block_id,
     optional: !!opts.optional,
@@ -39,6 +39,14 @@ function input(block_id, label, opts = {}) {
       max_length: opts.max_length,
     },
   };
+  // Slack's `hint` shows greyed-out helper text under the field. ≤ 150 chars.
+  if (opts.hint) block.hint = { type: 'plain_text', text: opts.hint };
+  return block;
+}
+
+// Section heading — a `header` block sized appropriately for modal sections.
+function header(text) {
+  return { type: 'header', text: { type: 'plain_text', text, emoji: true } };
 }
 
 function buildView({ funnel } = {}) {
@@ -54,40 +62,18 @@ function buildView({ funnel } = {}) {
     submit: { type: 'plain_text', text: 'Save' },
     close:  { type: 'plain_text', text: 'Cancel' },
     blocks: [
+      // ── Basics ────────────────────────────────────────────────
+      header('🧭 Basics'),
       input('name', 'Funnel name', {
         initial_value: f.name,
         max_length: 60,
+        hint: 'Short slug, unique to you (lowercase, hyphens). e.g. defi-treasury-pain',
       }),
-      input('search_queries', 'Search queries (one per line)', {
-        multiline: true,
-        initial_value: (f.search_queries ?? []).join('\n'),
-        placeholder: '"event-driven architecture" / "durable execution" lang:en / "distributed tracing" -hiring',
-      }),
-      input('relevance_prompt', 'Relevance prompt (sent to Claude as system prompt)', {
-        multiline: true,
-        initial_value: f.relevance_prompt,
-        max_length: 3000,
-      }),
-      {
-        type: 'section',
-        fields: [
-          { type: 'mrkdwn', text: '*Scoring thresholds*' },
-          { type: 'mrkdwn', text: '*Schedule + budget*' },
-        ],
-      },
-      input('min_score',      'min_score (1-10)',          { initial_value: String(f.min_score      ?? 7) }),
-      input('velocity_floor', 'velocity_floor (eng/hour)', { initial_value: String(f.velocity_floor ?? 20) }),
-      input('max_age_hours',  'max_age_hours',             { initial_value: String(f.max_age_hours  ?? 12) }),
-      input('max_per_digest', 'max_per_digest',            { initial_value: String(f.max_per_digest ?? 5) }),
-      input('interval_hours', 'interval_hours (how often to rerun)', {
-        initial_value: String(f.interval_hours ?? 6),
-        placeholder: '6',
-      }),
-      input('budget_monthly_usd', 'budget_monthly_usd', { initial_value: String(f.budget_monthly_usd ?? 20) }),
       {
         type: 'input',
         block_id: 'status',
         label: { type: 'plain_text', text: 'Status' },
+        hint: { type: 'plain_text', text: 'Active = runs on schedule. Paused = sits idle until you re-activate.' },
         element: {
           type: 'radio_buttons',
           action_id: 'value',
@@ -95,6 +81,58 @@ function buildView({ funnel } = {}) {
           options: ['active', 'paused'].map(statusOption),
         },
       },
+
+      // ── What to search ────────────────────────────────────────
+      header('🔍 What to search'),
+      input('search_queries', 'Twitter search queries (one per line)', {
+        multiline: true,
+        initial_value: (f.search_queries ?? []).join('\n'),
+        placeholder: '"event-driven architecture" lang:en\n"durable execution" -hiring',
+        hint: 'Each line is a full Twitter search. Use quotes for phrases, OR for alternatives, lang:en, since:DATE, etc.',
+      }),
+
+      // ── How Claude scores ─────────────────────────────────────
+      header('🧠 How Claude scores it'),
+      input('relevance_prompt', 'Relevance prompt', {
+        multiline: true,
+        initial_value: f.relevance_prompt,
+        max_length: 3000,
+        hint: 'Sent to Claude as a system prompt. Define the ICP, boost signals, hard skips, scoring rubric, and 1–2 example tweets with scores.',
+      }),
+
+      // ── Quality filters ───────────────────────────────────────
+      header('🎚️ Quality filters'),
+      input('min_score', 'Minimum score to post (1–10)', {
+        initial_value: String(f.min_score ?? 7),
+        hint: 'How strict to be. 6–7 is a good start. Raise it if you get too much noise; lower it if you get too few cards.',
+      }),
+      input('velocity_floor', 'Minimum engagement-per-hour', {
+        initial_value: String(f.velocity_floor ?? 20),
+        hint: '0 = let Claude judge everything. 20 = only viral-ish tweets. (likes + replies×2 + quotes×5 + retweets×3) / hoursOld.',
+      }),
+      input('max_age_hours', 'How far back to look (hours)', {
+        initial_value: String(f.max_age_hours ?? 12),
+        hint: '12 = today only. 24 = past day. 168 = past week. Older tweets need stronger engagement to pass the velocity floor.',
+      }),
+
+      // ── Run control ───────────────────────────────────────────
+      header('⏱️ Run control'),
+      input('max_per_digest', 'Max cards posted per run', {
+        initial_value: String(f.max_per_digest ?? 5),
+        hint: 'Cap on how many cards land in #leads per run. Excess qualified candidates are still saved but not posted.',
+      }),
+      input('interval_hours', 'Re-run every N hours', {
+        initial_value: String(f.interval_hours ?? 6),
+        placeholder: '6',
+        hint: 'Worker checks this funnel at most every N hours. 3 = aggressive, 24 = once a day.',
+      }),
+
+      // ── Budget ────────────────────────────────────────────────
+      header('💰 Budget'),
+      input('budget_monthly_usd', 'Monthly spend cap ($)', {
+        initial_value: String(f.budget_monthly_usd ?? 20),
+        hint: 'Auto-pause this funnel if it costs more than $X this month (auto-pause ships in Phase 6 — for now just informational).',
+      }),
     ],
   };
 }
