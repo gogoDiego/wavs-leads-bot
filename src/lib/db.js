@@ -157,6 +157,17 @@ export async function getCandidateById(id) {
   return q1('select * from candidates where id = $1', [id]);
 }
 
+export async function getRecentCandidatesForFunnel(funnelId, limit = 8) {
+  return q(
+    `select id, score, posted, author_handle, tweet_text, tweet_url, velocity, reasoning, created_at
+     from candidates
+     where funnel_id = $1
+     order by created_at desc
+     limit $2`,
+    [funnelId, limit],
+  );
+}
+
 // ── feedback ─────────────────────────────────────────────────────────────
 export async function insertFeedback({ candidate_id, user_slack_id, kind }) {
   await q(
