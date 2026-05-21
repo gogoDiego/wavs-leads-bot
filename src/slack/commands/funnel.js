@@ -10,7 +10,6 @@ import {
   findFunnelByNameAnyOwner,
   createFunnel,
   withWorkerLock,
-  getRecentCandidatesForFunnel,
 } from '../../lib/db.js';
 import { runAllActive, runFunnelByName } from '../../worker/runDueFunnels.js';
 import { openNewFunnelSimpleModal } from '../modals/newFunnelSimple.js';
@@ -18,7 +17,7 @@ import { openNewFunnelAdvancedModal } from '../modals/newFunnelAdvanced.js';
 import { openNewFunnelAiModal } from '../modals/newFunnelAi.js';
 
 const STUB = (sub) =>
-  `\`${sub}\` is coming in a later phase. Available now: \`/funnel new [ai|advanced] | list | pause <name> | delete <name> | stats <name> | debug <name> | edit <name> [advanced] | fork <name> | run [name]\`.`;
+  `\`${sub}\` is coming in a later phase. Available now: \`/funnel new [ai|advanced] | list | pause <name> | delete <name> | stats <name> | edit <name> [advanced] | fork <name> | run [name]\`.`;
 
 function describeSchedule(funnel) {
   if (!funnel.interval_hours) return 'manual only';
@@ -101,107 +100,6 @@ async function handleStats({ ownerSlackId, name, respond }) {
     `Spend: $${Number(f.spent_this_month_usd).toFixed(2)} / $${Number(f.budget_monthly_usd).toFixed(2)} this month (lifetime scoring cost: $${s.total_cost.toFixed(4)})`,
   ];
   await respond({ response_type: 'in_channel', text: lines.join('\n') });
-}
-
-function truncateForDump(s, max = 280) {
-  if (!s) return '';
-  const oneLine = String(s).replace(/\n/g, ' ');
-  return oneLine.length > max ? oneLine.slice(0, max - 1) + '…' : oneLine;
-}
-
-function formatDebugDump(funnel, stats, recent) {
-  const cfg = funnel.simple_config ?? {};
-  const lines = [
-    `# wavs-leads-bot debug dump`,
-    `# Generated: ${new Date().toISOString()}`,
-    ``,
-    `funnel:`,
-    `  id: ${funnel.id}`,
-    `  owner: ${funnel.owner_slack_id}`,
-    `  name: ${funnel.name}`,
-    `  status: ${funnel.status}`,
-    `  prompt_mode: ${funnel.prompt_mode}`,
-    `  interval_hours: ${funnel.interval_hours ?? 0}${!funnel.interval_hours ? ' (manual only)' : ''}`,
-    `  last_run_at: ${funnel.last_run_at ?? 'never'}`,
-    `  created_at: ${funnel.created_at}`,
-    ``,
-    `thresholds:`,
-    `  min_score: ${funnel.min_score}`,
-    `  velocity_floor: ${funnel.velocity_floor}`,
-    `  max_age_hours: ${funnel.max_age_hours}`,
-    `  max_per_digest: ${funnel.max_per_digest}`,
-    ``,
-    `budget:`,
-    `  monthly_cap_usd: ${Number(funnel.budget_monthly_usd).toFixed(2)}`,
-    `  spent_this_month_usd: ${Number(funnel.spent_this_month_usd).toFixed(4)}`,
-    ``,
-    `search_queries:`,
-    ...(funnel.search_queries ?? []).map((q) => `  - ${q}`),
-    ``,
-  ];
-
-  if (cfg.icp || cfg.keywords?.length || cfg.hard_skips?.length) {
-    lines.push(`simple_config:`);
-    if (cfg.icp)                 lines.push(`  icp: ${JSON.stringify(cfg.icp)}`);
-    if (cfg.keywords?.length)    lines.push(`  keywords: [${cfg.keywords.map((k) => JSON.stringify(k)).join(', ')}]`);
-    if (cfg.hard_skips?.length)  lines.push(`  hard_skips: [${cfg.hard_skips.map((k) => JSON.stringify(k)).join(', ')}]`);
-    lines.push(``);
-  }
-
-  lines.push(
-    `relevance_prompt: |`,
-    ...((funnel.relevance_prompt ?? '').split('\n').map((l) => `  ${l}`)),
-    ``,
-    `stats:`,
-    `  total_candidates: ${stats.total}`,
-    `  posted: ${stats.posted}`,
-    `  avg_score: ${stats.avg_score.toFixed(2)}`,
-    `  total_scoring_cost_usd: ${stats.total_cost.toFixed(4)}`,
-    `  feedback: { saved: ${stats.feedback.saved}, hide: ${stats.feedback.hide} }`,
-    ``,
-    `recent_candidates:`,
-  );
-
-  if (!recent.length) {
-    lines.push(`  []  # no candidates scored yet — likely passed_velocity was 0`);
-  } else {
-    for (const c of recent) {
-      lines.push(
-        `  - score: ${c.score}, posted: ${c.posted}, velocity: ${c.velocity}, when: ${new Date(c.created_at).toISOString()}`,
-        `    @${c.author_handle}: ${JSON.stringify(truncateForDump(c.tweet_text, 200))}`,
-        ...(c.reasoning ? [`    reasoning: ${JSON.stringify(truncateForDump(c.reasoning, 200))}`] : []),
-      );
-    }
-  }
-
-  return lines.join('\n');
-}
-
-async function handleDebug({ ownerSlackId, name, respond }) {
-  if (!name) {
-    await respond({ response_type: 'in_channel', text: 'Usage: `/funnel debug <name>`' });
-    return;
-  }
-  const f = await getFunnelByName(ownerSlackId, name);
-  if (!f) {
-    await respond({ response_type: 'in_channel', text: `No funnel named *${name}* found.` });
-    return;
-  }
-
-  const [stats, recent] = await Promise.all([
-    getFunnelStats(f.id),
-    getRecentCandidatesForFunnel(f.id, 8),
-  ]);
-
-  const dump = formatDebugDump(f, stats, recent);
-
-  // Ephemeral by design — full funnel config (prompts, keywords) is sensitive
-  // enough to not broadcast to the whole channel. Copy + paste to a Claude
-  // chat to diagnose.
-  await respond({
-    response_type: 'ephemeral',
-    text: `📋 *Debug dump for \`${f.name}\`* — copy + paste this to Claude:\n\`\`\`\n${dump}\n\`\`\``,
-  });
 }
 
 async function handleRun({ name, respond }) {
@@ -381,12 +279,6 @@ export function registerFunnelCommand(app) {
         case 'stats': {
           const name = tokens.slice(1).join(' ').trim();
           await handleStats({ ownerSlackId, name, respond });
-          return;
-        }
-
-        case 'debug': {
-          const name = tokens.slice(1).join(' ').trim();
-          await handleDebug({ ownerSlackId, name, respond });
           return;
         }
 

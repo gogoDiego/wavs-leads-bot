@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import { createFunnel, getFunnelByName, updateFunnel } from '../../lib/db.js';
+import {
+  createFunnel,
+  getFunnelByName,
+  updateFunnel,
+  getFunnelStats,
+  getRecentCandidatesForFunnel,
+} from '../../lib/db.js';
 import { log } from '../../lib/log.js';
 
 const CALLBACK_ID = 'funnel_advanced';
@@ -49,7 +55,41 @@ function header(text) {
   return { type: 'header', text: { type: 'plain_text', text, emoji: true } };
 }
 
-function buildView({ funnel } = {}) {
+// Compact one-line truncate for tweet/reasoning text in the debug snippet.
+function compact(s, max = 180) {
+  if (!s) return '';
+  const oneLine = String(s).replace(/\n/g, ' ');
+  return oneLine.length > max ? oneLine.slice(0, max - 1) + '…' : oneLine;
+}
+
+// A short, copy-pasteable diagnostic snippet for the bottom of the edit modal.
+// Intentionally skips the full relevance_prompt (already visible above in the
+// modal's textarea) so the snippet fits inside Slack's 3000-char section limit.
+function formatDebugSnippet(funnel, stats, recent) {
+  const lines = [
+    `funnel: ${funnel.name}  (id ${funnel.id})`,
+    `status: ${funnel.status}  mode: ${funnel.prompt_mode}  interval: ${funnel.interval_hours ?? 0}h  last_run: ${funnel.last_run_at ?? 'never'}`,
+    `thresholds: min_score=${funnel.min_score} velocity_floor=${funnel.velocity_floor} max_age_hours=${funnel.max_age_hours} max_per_digest=${funnel.max_per_digest}`,
+    `budget: $${Number(funnel.budget_monthly_usd).toFixed(2)} cap, $${Number(funnel.spent_this_month_usd).toFixed(4)} spent`,
+    `search_queries:`,
+    ...(funnel.search_queries ?? []).map((q) => `  - ${compact(q, 200)}`),
+    ``,
+    `stats: total=${stats.total} posted=${stats.posted} avg_score=${stats.avg_score.toFixed(2)} saved=${stats.feedback.saved} hidden=${stats.feedback.hide}`,
+    ``,
+    `recent_candidates:`,
+  ];
+  if (!recent.length) {
+    lines.push(`  (none — likely passed_velocity was 0 or the funnel hasn't run yet)`);
+  } else {
+    for (const c of recent) {
+      lines.push(`  - score ${c.score} posted=${c.posted} velocity=${c.velocity} @${c.author_handle}: ${compact(c.tweet_text, 140)}`);
+      if (c.reasoning) lines.push(`    why: ${compact(c.reasoning, 160)}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function buildView({ funnel, debugSnippet } = {}) {
   const isEdit = !!funnel;
   const f = funnel ?? {};
   const initialStatus = f.status ?? 'active';
@@ -133,12 +173,43 @@ function buildView({ funnel } = {}) {
         initial_value: String(f.budget_monthly_usd ?? 20),
         hint: 'Auto-pause this funnel if it costs more than $X this month (auto-pause ships in Phase 6 — for now just informational).',
       }),
+
+      // ── Debug snippet (edit mode only) ────────────────────────
+      // Compact dump of current state + recent scoring activity. Select all
+      // inside the code block and copy to share with Claude when diagnosing.
+      ...(isEdit && debugSnippet ? [
+        header('📋 Debug info'),
+        {
+          type: 'context',
+          elements: [{ type: 'mrkdwn', text: '_Triple-click inside the code block below, copy, and paste into a Claude chat if something\'s off._' }],
+        },
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: '```\n' + debugSnippet + '\n```' },
+        },
+      ] : []),
     ],
   };
 }
 
 export async function openNewFunnelAdvancedModal({ client, trigger_id, funnel }) {
-  await client.views.open({ trigger_id, view: buildView({ funnel }) });
+  // Build the modal. When editing, fetch a compact debug snippet (stats +
+  // recent candidates) to render at the bottom for copy-paste diagnostics.
+  let debugSnippet = null;
+  if (funnel?.id) {
+    try {
+      const [stats, recent] = await Promise.all([
+        getFunnelStats(funnel.id),
+        getRecentCandidatesForFunnel(funnel.id, 6),
+      ]);
+      debugSnippet = formatDebugSnippet(funnel, stats, recent);
+    } catch (err) {
+      // Don't block the modal open on debug-snippet failure. Modal opens
+      // without the debug section.
+      log.warn('debug_snippet_failed', { funnel_id: funnel.id, error: String(err) });
+    }
+  }
+  await client.views.open({ trigger_id, view: buildView({ funnel, debugSnippet }) });
 }
 
 function splitLines(s) {
