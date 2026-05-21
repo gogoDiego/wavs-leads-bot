@@ -103,27 +103,47 @@ async function handleStats({ ownerSlackId, name, respond }) {
 }
 
 async function handleRun({ name, respond }) {
-  // Show a short "Running…" ephemeral so the user knows the worker fired.
-  // Once the run finishes (parent + cards land in #leads), the ephemeral is
-  // deleted via response_url — keeping the in-channel slate clean.
   const label = name ? `*${name}*` : 'all active funnels';
-  await respond({ response_type: 'ephemeral', text: `🤖 Running ${label}…` });
+  const startTime = Date.now();
+
+  // Initial "Running…" ephemeral. Includes a hint so the message is
+  // self-contained even if our cleanup path fails (e.g., 60s function
+  // timeout) — user knows what to do without a stuck mystery message.
+  await respond({
+    response_type: 'ephemeral',
+    text: `🤖 Running ${label}…\n_Results will land in <#${env.SLACK_LEADS_CHANNEL_ID}> in 30–60s. If nothing appears in 2 minutes, the worker may have timed out — try \`/funnel run\` again or check Vercel logs._`,
+  });
 
   waitUntil((async () => {
+    let runError = null;
     try {
       await withWorkerLock(async () => {
         if (name) return [await runFunnelByName(name)];
         return runAllActive();
       });
     } catch (err) {
-      console.error('funnel_run_failed', { name, error: err.message });
+      runError = err;
+      console.error('funnel_run_failed', { name, error: err.message, code: err.code });
     }
-    // Auto-delete the "Running…" ephemeral. Slack accepts delete_original
-    // via the response_url within 30 min. If it fails (rare), log silently.
+
+    const durationS = Math.round((Date.now() - startTime) / 1000);
+
+    // Try delete_original first — cleanest UX on success. If Slack rejects
+    // it (some response_url variants need a body), fall back to a final
+    // status message so the user always sees a resolution.
     try {
       await respond({ delete_original: true });
-    } catch (err) {
-      console.warn('funnel_run_ephemeral_delete_failed', { error: err.message });
+    } catch (deleteErr) {
+      const finalText = runError
+        ? (runError.code === 'FUNNEL_NOT_FOUND'
+            ? `❌ ${runError.message} Try \`/funnel list\` to see exact names.`
+            : `❌ Run failed after ${durationS}s: ${runError.message}`)
+        : `✅ Done in ${durationS}s. See <#${env.SLACK_LEADS_CHANNEL_ID}>.`;
+      try {
+        await respond({ response_type: 'ephemeral', replace_original: true, text: finalText });
+      } catch (replaceErr) {
+        console.warn('funnel_run_ephemeral_finalize_failed', { delete: deleteErr.message, replace: replaceErr.message });
+      }
     }
   })());
 }
