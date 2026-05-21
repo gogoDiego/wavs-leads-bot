@@ -4,12 +4,13 @@ import { log } from '../../lib/log.js';
 
 const CALLBACK_ID = 'funnel_simple';
 
-// Map UI choices ↔ interval_hours. 6h is the default.
+// Map UI choices ↔ interval_hours. 6h is the default; 0 means manual only.
 const FREQUENCY_TO_HOURS = {
   every_3h:  3,
   every_6h:  6,
   every_12h: 12,
   daily:     24,
+  manual:    0,
 };
 
 const FREQUENCY_LABELS = {
@@ -17,6 +18,7 @@ const FREQUENCY_LABELS = {
   every_6h:  'Every 6 hours (default)',
   every_12h: 'Every 12 hours',
   daily:     'Once a day',
+  manual:    'Manual only (only runs when I trigger /funnel run)',
 };
 
 const DEFAULT_FREQUENCY = 'every_6h';

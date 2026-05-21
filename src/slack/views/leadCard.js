@@ -28,6 +28,21 @@ function tagsForFunnel(funnel) {
   return queries.map((q) => (q.length > 50 ? q.slice(0, 47) + '…' : q)).slice(0, 5);
 }
 
+// Slack `<!date^...>` auto-formats to the viewer's timezone. We always pass
+// epoch seconds. Fallback text shown if Slack can't render (very old clients).
+function slackTime(date) {
+  const epoch = Math.floor(date.getTime() / 1000);
+  return `<!date^${epoch}^{time}|${date.toISOString()}>`;
+}
+
+function describeTiming(funnel, runAt = new Date()) {
+  if (!funnel.interval_hours) {
+    return `⏱️ ran ${slackTime(runAt)} · manual only (no auto-run)`;
+  }
+  const nextRun = new Date(runAt.getTime() + funnel.interval_hours * 3_600_000);
+  return `⏱️ ran ${slackTime(runAt)} · every ${funnel.interval_hours}h · next ${slackTime(nextRun)}`;
+}
+
 export function buildRunSummaryMessage({ funnel, qualified, summary }) {
   const topScore = qualified.length ? qualified[0].score : null;
   const cost     = Number(summary.cost_usd || 0).toFixed(3);
@@ -50,6 +65,7 @@ export function buildRunSummaryMessage({ funnel, qualified, summary }) {
     blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: tagsLine }] });
   }
   blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: stats }] });
+  blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: describeTiming(funnel) }] });
   blocks.push({
     type: 'actions',
     block_id: `run_actions_${funnel.id}`,

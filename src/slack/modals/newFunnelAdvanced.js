@@ -15,7 +15,7 @@ const submitSchema = z.object({
   max_age_hours:      z.coerce.number().int().min(1).max(168),
   max_per_digest:     z.coerce.number().int().min(1).max(20),
   budget_monthly_usd: z.coerce.number().min(0),
-  interval_hours:     z.coerce.number().int().min(1).max(168),
+  interval_hours:     z.coerce.number().int().min(0).max(168),
   status:             z.enum(['active', 'paused']),
 });
 
@@ -121,10 +121,10 @@ function buildView({ funnel } = {}) {
         initial_value: String(f.max_per_digest ?? 5),
         hint: 'Cap on how many cards land in #leads per run. Excess qualified candidates are still saved but not posted.',
       }),
-      input('interval_hours', 'Re-run every N hours', {
+      input('interval_hours', 'Re-run every N hours (0 = manual only)', {
         initial_value: String(f.interval_hours ?? 6),
         placeholder: '6',
-        hint: 'Worker checks this funnel at most every N hours. 3 = aggressive, 24 = once a day.',
+        hint: 'How often the worker re-checks this funnel. 3 = aggressive, 24 = once a day, 0 = never auto-run (only via /funnel run).',
       }),
 
       // ── Budget ────────────────────────────────────────────────

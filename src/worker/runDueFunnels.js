@@ -8,6 +8,9 @@ import { log } from '../lib/log.js';
 import { runFunnel } from './runFunnel.js';
 
 export function isDue(funnel, now = new Date()) {
+  // interval_hours of 0 (or null/undefined) = manual-only funnel — never
+  // auto-runs on a tick, only via /funnel run or the curl endpoint.
+  if (!funnel.interval_hours) return false;
   if (!funnel.last_run_at) return true;
   const elapsedH = (now - new Date(funnel.last_run_at)) / 3_600_000;
   return elapsedH >= funnel.interval_hours;

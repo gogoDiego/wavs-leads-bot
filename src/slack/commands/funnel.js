@@ -19,6 +19,7 @@ const STUB = (sub) =>
   `\`${sub}\` is coming in a later phase. Available now: \`/funnel new | list | pause <name> | delete <name> | stats <name> | edit <name> [advanced] | fork <name> | run [name]\`.`;
 
 function describeSchedule(funnel) {
+  if (!funnel.interval_hours) return 'manual only';
   return `every ${funnel.interval_hours}h`;
 }
 
