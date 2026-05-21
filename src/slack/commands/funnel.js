@@ -1,3 +1,5 @@
+import { waitUntil } from '@vercel/functions';
+
 import {
   listFunnelsByOwner,
   getFunnelByName,
@@ -6,12 +8,14 @@ import {
   getFunnelStats,
   findFunnelByNameAnyOwner,
   createFunnel,
+  withWorkerLock,
 } from '../../lib/db.js';
+import { runAllActive, runFunnelByName } from '../../worker/runDueFunnels.js';
 import { openNewFunnelSimpleModal } from '../modals/newFunnelSimple.js';
 import { openNewFunnelAdvancedModal } from '../modals/newFunnelAdvanced.js';
 
 const STUB = (sub) =>
-  `\`${sub}\` is coming in a later phase. Available now: \`/funnel new | list | pause <name> | delete <name> | stats <name> | edit <name> [advanced] | fork <name>\`.`;
+  `\`${sub}\` is coming in a later phase. Available now: \`/funnel new | list | pause <name> | delete <name> | stats <name> | edit <name> [advanced] | fork <name> | run [name]\`.`;
 
 function describeSchedule(funnel) {
   return `every ${funnel.interval_hours}h`;
@@ -93,6 +97,37 @@ async function handleStats({ ownerSlackId, name, respond }) {
     `Spend: $${Number(f.spent_this_month_usd).toFixed(2)} / $${Number(f.budget_monthly_usd).toFixed(2)} this month (lifetime scoring cost: $${s.total_cost.toFixed(4)})`,
   ];
   await respond({ response_type: 'ephemeral', text: lines.join('\n') });
+}
+
+async function handleRun({ name, respond }) {
+  // Slack expects an ack within 3s. We respond immediately and use
+  // Vercel's waitUntil to keep the function alive while the worker runs,
+  // so respond() can be called again with the result via response_url.
+  const label = name ? `*${name}*` : 'all active funnels';
+  await respond({ response_type: 'ephemeral', text: `🤖 Running ${label}… cards will land in #leads in 30–60s.` });
+
+  waitUntil((async () => {
+    try {
+      const { skipped, reason, result } = await withWorkerLock(async () => {
+        if (name) return [await runFunnelByName(name)];
+        return runAllActive();
+      });
+      if (skipped) {
+        await respond({ response_type: 'ephemeral', replace_original: true,
+          text: `⚠️ Skipped: another worker run is in flight (${reason}). Try again in a minute.` });
+        return;
+      }
+      const lines = result.map((s) =>
+        `• *${s.funnel}* — fetched ${s.fetched}, scored ${s.scored}, posted *${s.posted}*${s.error ? ` (error: ${s.error})` : ''}`,
+      );
+      const totalCost = result.reduce((a, s) => a + Number(s.cost_usd || 0), 0);
+      await respond({ response_type: 'ephemeral', replace_original: true,
+        text: `✅ Done. Total cost $${totalCost.toFixed(3)}.\n${lines.join('\n')}` });
+    } catch (err) {
+      const msg = err.code === 'FUNNEL_NOT_FOUND' ? err.message : `Worker failed: ${err.message}`;
+      await respond({ response_type: 'ephemeral', replace_original: true, text: `❌ ${msg}` });
+    }
+  })());
 }
 
 async function handleEdit({ ownerSlackId, name, mode, client, trigger_id, respond }) {
@@ -224,6 +259,12 @@ export function registerFunnelCommand(app) {
           const mode = last === 'advanced' || last === 'simple' ? last : null;
           const name = (mode ? rest.slice(0, -1) : rest).join(' ').trim();
           await handleEdit({ ownerSlackId, name, mode, client, trigger_id: command.trigger_id, respond });
+          return;
+        }
+
+        case 'run': {
+          const name = tokens.slice(1).join(' ').trim() || null;
+          await handleRun({ name, respond });
           return;
         }
 

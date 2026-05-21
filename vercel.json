@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/slack.js":  { "maxDuration": 30 },
+    "api/slack.js":  { "maxDuration": 60 },
     "api/worker.js": { "maxDuration": 60 }
   }
 }

@@ -4,14 +4,19 @@
 //
 // Manual trigger:
 //   curl -H "Authorization: Bearer $CRON_SECRET" https://<your-domain>/api/worker
-// To bypass the per-funnel due-check (force a run of every active funnel):
+// Force-run all active funnels (skip per-funnel interval_hours check):
 //   curl -H "Authorization: Bearer $CRON_SECRET" "https://<your-domain>/api/worker?force=1"
+// Force-run a single funnel by name:
+//   curl -H "Authorization: Bearer $CRON_SECRET" "https://<your-domain>/api/worker?funnel=smart-vault-leads"
 
 import { env } from '../src/lib/env.js';
 import { log } from '../src/lib/log.js';
-import { runDueFunnels } from '../src/worker/runDueFunnels.js';
-import { withWorkerLock, listActiveFunnels, markFunnelRan } from '../src/lib/db.js';
-import { runFunnel } from '../src/worker/runFunnel.js';
+import {
+  runDueFunnels,
+  runAllActive,
+  runFunnelByName,
+} from '../src/worker/runDueFunnels.js';
+import { withWorkerLock } from '../src/lib/db.js';
 
 function unauthorized(req) {
   const expected = env.CRON_SECRET;
@@ -20,29 +25,21 @@ function unauthorized(req) {
   return auth !== `Bearer ${expected}`;
 }
 
-async function runAllActive() {
-  const funnels = await listActiveFunnels();
-  const summaries = [];
-  for (const f of funnels) {
-    const s = await runFunnel(f);
-    await markFunnelRan(f.id);
-    summaries.push(s);
-  }
-  return summaries;
-}
-
 export default async function handler(req, res) {
   if (unauthorized(req)) {
     res.status(401).json({ error: 'unauthorized' });
     return;
   }
 
-  const force = (req.query?.force ?? req.url?.includes('force=1')) ? true : false;
+  const funnelName = req.query?.funnel;
+  const force = req.query?.force === '1' || req.url?.includes('force=1');
 
   try {
-    const { skipped, reason, result } = await withWorkerLock(async () =>
-      force ? runAllActive() : runDueFunnels(),
-    );
+    const { skipped, reason, result } = await withWorkerLock(async () => {
+      if (funnelName) return [await runFunnelByName(funnelName)];
+      if (force)      return runAllActive();
+      return runDueFunnels();
+    });
     if (skipped) {
       log.warn('worker_skipped', { reason });
       res.status(200).json({ ok: true, skipped: true, reason });
@@ -50,6 +47,10 @@ export default async function handler(req, res) {
     }
     res.status(200).json({ ok: true, ran: result.length, summaries: result });
   } catch (err) {
+    if (err.code === 'FUNNEL_NOT_FOUND') {
+      res.status(404).json({ error: err.message });
+      return;
+    }
     log.error('worker_endpoint_failed', { error: String(err) });
     res.status(500).json({ error: String(err) });
   }

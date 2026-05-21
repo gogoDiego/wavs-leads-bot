@@ -1,6 +1,7 @@
-// Block Kit card posted to #leads. The action buttons all carry candidate.id
-// in their `value`, so action handlers can look the row up without parsing
-// the message body.
+// Block Kit card posted to #leads. Each non-URL button carries enough state
+// in `value` to handle its action without parsing the message body.
+//   - feedback buttons (good/noise/saved/hide): value = candidate_id
+//   - edit funnel:                              value = funnel_id
 
 function truncate(text, max = 600) {
   if (!text) return '';
@@ -8,11 +9,12 @@ function truncate(text, max = 600) {
 }
 
 export const ACTION_IDS = {
-  open:  'card_open',
-  good:  'card_good',
-  noise: 'card_noise',
-  hide:  'card_hide',
-  saved: 'card_saved',
+  open:        'card_open',
+  good:        'card_good',
+  noise:       'card_noise',
+  hide:        'card_hide',
+  saved:       'card_saved',
+  edit_funnel: 'card_edit_funnel',
 };
 
 export function buildLeadCard({ funnel, candidateId, tweet, score, suggested_angle, velocity }) {
@@ -46,6 +48,7 @@ export function buildLeadCard({ funnel, candidateId, tweet, score, suggested_ang
       { type: 'button', action_id: ACTION_IDS.noise, style: 'danger',  text: { type: 'plain_text', text: '👎 Noise', emoji: true }, value: candidateId },
       { type: 'button', action_id: ACTION_IDS.saved, text: { type: 'plain_text', text: '📌 Saved', emoji: true }, value: candidateId },
       { type: 'button', action_id: ACTION_IDS.hide,  text: { type: 'plain_text', text: '🙈 Hide',  emoji: true }, value: candidateId },
+      { type: 'button', action_id: ACTION_IDS.edit_funnel, text: { type: 'plain_text', text: '✏️ Edit funnel', emoji: true }, value: funnel.id },
     ],
   });
 
