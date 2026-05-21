@@ -5,17 +5,8 @@ import { openNewFunnelAdvancedModal } from '../modals/newFunnelAdvanced.js';
 import { openNewFunnelSimpleModal } from '../modals/newFunnelSimple.js';
 
 const KIND_OF = {
-  [ACTION_IDS.good]:  'good',
-  [ACTION_IDS.noise]: 'noise',
   [ACTION_IDS.hide]:  'hide',
   [ACTION_IDS.saved]: 'saved',
-};
-
-const KIND_LABEL = {
-  good:  '👍 marked good',
-  noise: '👎 marked noise',
-  saved: '📌 saved',
-  hide:  '🙈 hidden',
 };
 
 async function handleFeedback({ kind, body, ack, client, respond }) {
@@ -85,7 +76,7 @@ export function registerCardButtonHandlers(app) {
   // 🔗 Open is a URL button — Slack opens the tweet automatically. Ack quietly.
   app.action(ACTION_IDS.open, async ({ ack }) => { await ack(); });
 
-  for (const action_id of [ACTION_IDS.good, ACTION_IDS.noise, ACTION_IDS.hide, ACTION_IDS.saved]) {
+  for (const action_id of [ACTION_IDS.hide, ACTION_IDS.saved]) {
     app.action(action_id, async (ctx) => {
       await handleFeedback({ kind: KIND_OF[action_id], ...ctx });
     });

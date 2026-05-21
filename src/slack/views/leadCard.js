@@ -11,8 +11,6 @@ function truncate(text, max = 600) {
 
 export const ACTION_IDS = {
   open:        'card_open',
-  good:        'card_good',
-  noise:       'card_noise',
   hide:        'card_hide',
   saved:       'card_saved',
   edit_funnel: 'card_edit_funnel',
@@ -91,8 +89,6 @@ export function buildLeadCard({ funnel, candidateId, tweet, score, velocity }) {
     block_id: `card_actions_${candidateId}`,
     elements: [
       { type: 'button', action_id: ACTION_IDS.open,  url: tweet.url, text: { type: 'plain_text', text: '🔗 Open',  emoji: true }, value: candidateId },
-      { type: 'button', action_id: ACTION_IDS.good,  style: 'primary', text: { type: 'plain_text', text: '👍 Good', emoji: true }, value: candidateId },
-      { type: 'button', action_id: ACTION_IDS.noise, style: 'danger',  text: { type: 'plain_text', text: '👎 Noise', emoji: true }, value: candidateId },
       { type: 'button', action_id: ACTION_IDS.saved, text: { type: 'plain_text', text: '📌 Saved', emoji: true }, value: candidateId },
       { type: 'button', action_id: ACTION_IDS.hide,  text: { type: 'plain_text', text: '🙈 Hide',  emoji: true }, value: candidateId },
     ],

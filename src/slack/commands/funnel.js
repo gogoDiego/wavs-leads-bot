@@ -93,8 +93,8 @@ async function handleStats({ ownerSlackId, name, respond }) {
     `Status: ${f.status === 'active' ? '🟢 active' : '⏸️ paused'} · ${describeSchedule(f)} · last run ${describeLastRun(f)}`,
     `Candidates scored: *${s.total}* · posted: *${s.posted}* · avg score *${s.avg_score.toFixed(1)}*`,
     s.posted
-      ? `Feedback (of ${s.posted} posted): 👍 ${fb.good} (${pct(fb.good, s.posted)}) · 👎 ${fb.noise} (${pct(fb.noise, s.posted)}) · 📌 ${fb.saved} (${pct(fb.saved, s.posted)}) · 🙈 ${fb.hide} (${pct(fb.hide, s.posted)})`
-      : `Feedback: nothing posted yet.`,
+      ? `Reactions (of ${s.posted} posted): 📌 ${fb.saved} (${pct(fb.saved, s.posted)}) · 🙈 ${fb.hide} (${pct(fb.hide, s.posted)})`
+      : `Reactions: nothing posted yet.`,
     `Spend: $${Number(f.spent_this_month_usd).toFixed(2)} / $${Number(f.budget_monthly_usd).toFixed(2)} this month (lifetime scoring cost: $${s.total_cost.toFixed(4)})`,
   ];
   await respond({ response_type: 'in_channel', text: lines.join('\n') });
