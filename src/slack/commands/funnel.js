@@ -14,6 +14,7 @@ import {
 import { runAllActive, runFunnelByName } from '../../worker/runDueFunnels.js';
 import { openNewFunnelSimpleModal } from '../modals/newFunnelSimple.js';
 import { openNewFunnelAdvancedModal } from '../modals/newFunnelAdvanced.js';
+import { openNewFunnelAiModal } from '../modals/newFunnelAi.js';
 
 const STUB = (sub) =>
   `\`${sub}\` is coming in a later phase. Available now: \`/funnel new | list | pause <name> | delete <name> | stats <name> | edit <name> [advanced] | fork <name> | run [name]\`.`;
@@ -215,9 +216,20 @@ export function registerFunnelCommand(app) {
     try {
       switch (sub) {
         case undefined:
-        case 'new':
-          await openNewFunnelSimpleModal({ client, trigger_id: command.trigger_id });
+        case 'new': {
+          // `/funnel new`      → simple modal (manual entry)
+          // `/funnel new ai`   → AI-build (intent → preview → save)
+          // `/funnel new adv*` → advanced modal (full control)
+          const mode = tokens[1];
+          if (mode === 'ai') {
+            await openNewFunnelAiModal({ client, trigger_id: command.trigger_id });
+          } else if (mode === 'advanced' || mode === 'adv') {
+            await openNewFunnelAdvancedModal({ client, trigger_id: command.trigger_id });
+          } else {
+            await openNewFunnelSimpleModal({ client, trigger_id: command.trigger_id });
+          }
           return;
+        }
 
         case 'list':
           await handleList({ ownerSlackId, respond });

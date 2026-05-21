@@ -8,12 +8,14 @@ import { env } from '../lib/env.js';
 import { registerFunnelCommand } from './commands/funnel.js';
 import { registerNewFunnelSimpleModal } from './modals/newFunnelSimple.js';
 import { registerNewFunnelAdvancedModal } from './modals/newFunnelAdvanced.js';
+import { registerNewFunnelAiModal } from './modals/newFunnelAi.js';
 import { registerCardButtonHandlers } from './actions/cardButtons.js';
 
 function registerHandlers(app) {
   registerFunnelCommand(app);
   registerNewFunnelSimpleModal(app);
   registerNewFunnelAdvancedModal(app);
+  registerNewFunnelAiModal(app);
   registerCardButtonHandlers(app);
 }
 
