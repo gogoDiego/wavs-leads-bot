@@ -12,7 +12,7 @@ import {
   markCandidatePosted,
   addSpend,
 } from '../lib/db.js';
-import { buildLeadCard } from '../slack/views/leadCard.js';
+import { buildLeadCard, buildRunSummaryMessage } from '../slack/views/leadCard.js';
 
 // Safety cap so a runaway query can't trigger 1000 Claude calls.
 // Also constrained by Vercel's 60s function timeout — each scoring call
@@ -114,38 +114,38 @@ export async function runFunnel(funnel) {
       .slice(0, funnel.max_per_digest);
     summary.qualified = qualified.length;
 
-    // 9. Post a parent run-summary message, then each card as a thread reply
-    //    under it. Keeps #leads tidy: one channel-level message per run,
-    //    individual cards live in the thread.
-    if (qualified.length > 0) {
-      const topScore = qualified[0].score;
-      const parent = await slack().chat.postMessage({
+    // 9. Always post a parent run-summary in #leads (carries stats, keyword
+     //    tags, and the Edit funnel button), then each qualified card as a
+     //    thread reply under it. Even a 0-lead run gets a parent so the
+     //    owner sees the bot ran and can re-tune.
+    const summaryMsg = buildRunSummaryMessage({ funnel, qualified, summary });
+    const parent = await slack().chat.postMessage({
+      channel: env.SLACK_LEADS_CHANNEL_ID,
+      text: summaryMsg.text,
+      blocks: summaryMsg.blocks,
+      unfurl_links: false,
+      unfurl_media: false,
+    });
+
+    for (const r of qualified) {
+      const card = buildLeadCard({
+        funnel,
+        candidateId: r.row.id,
+        tweet: r.tweet,
+        score: r.score,
+        suggested_angle: r.suggested_angle,
+        velocity: r.v,
+      });
+      const resp = await slack().chat.postMessage({
         channel: env.SLACK_LEADS_CHANNEL_ID,
-        text: `🤖 *${funnel.name}* — ${qualified.length} lead${qualified.length === 1 ? '' : 's'} (top score ${topScore}/10)`,
+        thread_ts: parent.ts,
+        text: card.text,
+        blocks: card.blocks,
         unfurl_links: false,
         unfurl_media: false,
       });
-
-      for (const r of qualified) {
-        const card = buildLeadCard({
-          funnel,
-          candidateId: r.row.id,
-          tweet: r.tweet,
-          score: r.score,
-          suggested_angle: r.suggested_angle,
-          velocity: r.v,
-        });
-        const resp = await slack().chat.postMessage({
-          channel: env.SLACK_LEADS_CHANNEL_ID,
-          thread_ts: parent.ts,
-          text: card.text,
-          blocks: card.blocks,
-          unfurl_links: false,
-          unfurl_media: false,
-        });
-        await markCandidatePosted(r.row.id, resp.ts);
-        summary.posted += 1;
-      }
+      await markCandidatePosted(r.row.id, resp.ts);
+      summary.posted += 1;
     }
   } catch (err) {
     summary.error = String(err);

@@ -1,5 +1,6 @@
 import { waitUntil } from '@vercel/functions';
 
+import { env } from '../../lib/env.js';
 import {
   listFunnelsByOwner,
   getFunnelByName,
@@ -102,9 +103,10 @@ async function handleStats({ ownerSlackId, name, respond }) {
 async function handleRun({ name, respond }) {
   // Slack expects an ack within 3s. We respond immediately and use
   // Vercel's waitUntil to keep the function alive while the worker runs,
-  // so respond() can be called again with the result via response_url.
+  // then update the ephemeral with a short pointer to #leads (where the
+  // per-funnel parent message has the full stats + Edit-funnel button).
   const label = name ? `*${name}*` : 'all active funnels';
-  await respond({ response_type: 'ephemeral', text: `🤖 Running ${label}… cards will land in #leads in 30–60s.` });
+  await respond({ response_type: 'ephemeral', text: `🤖 Running ${label}… results in <#${env.SLACK_LEADS_CHANNEL_ID}> in 30–60s.` });
 
   waitUntil((async () => {
     try {
@@ -117,12 +119,9 @@ async function handleRun({ name, respond }) {
           text: `⚠️ Skipped: another worker run is in flight (${reason}). Try again in a minute.` });
         return;
       }
-      const lines = result.map((s) =>
-        `• *${s.funnel}* — fetched ${s.fetched}, scored ${s.scored}, posted *${s.posted}*${s.error ? ` (error: ${s.error})` : ''}`,
-      );
-      const totalCost = result.reduce((a, s) => a + Number(s.cost_usd || 0), 0);
+      const totalPosted = result.reduce((a, s) => a + s.posted, 0);
       await respond({ response_type: 'ephemeral', replace_original: true,
-        text: `✅ Done. Total cost $${totalCost.toFixed(3)}.\n${lines.join('\n')}` });
+        text: `✅ Done. *${totalPosted}* lead${totalPosted === 1 ? '' : 's'} posted to <#${env.SLACK_LEADS_CHANNEL_ID}>.` });
     } catch (err) {
       const msg = err.code === 'FUNNEL_NOT_FOUND' ? err.message : `Worker failed: ${err.message}`;
       await respond({ response_type: 'ephemeral', replace_original: true, text: `❌ ${msg}` });
